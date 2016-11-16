@@ -1,0 +1,2 @@
+#use "hol.ml";;
+(*#use "foo.ml";;*)
