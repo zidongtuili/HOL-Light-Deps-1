@@ -1,0 +1,8 @@
+(push (concat (getenv "utop") "/share/emacs/site-lisp") load-path)
+(require 'tuareg)
+(require 'magit)
+(require 'helm-config)
+(require 'helm-projectile)
+(add-to-list 'auto-mode-alist '("\\.mli?\\'" . tuareg-mode))
+(add-hook 'tuareg-mode-hook 'whitespace-mode)
+(helm-mode 1)
