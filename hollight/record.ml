@@ -135,7 +135,7 @@ module Record_hol_kernel : Recording_hol_kernel =
         let id = !thm_id_counter in
         let dep_info = Identified id in
         let thm = Record(cert,deps,Some dep_info,constdeps,typedeps) in
-        ack_certs := Acc.modify I
+        ack_certs := Acc.modify (Intmap.add id thm)
                                 cert
                                 (Intmap.singleton id thm)
                                 !ack_certs;

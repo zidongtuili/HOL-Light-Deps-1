@@ -191,11 +191,13 @@ loadt "meta.ml";;
 (* Higher level deductive system.                                            *)
 (* ------------------------------------------------------------------------- *)
 
-loads "equal.ml";;      (* Basic equality reasoning and conversionals        *)
-loads "bool.ml";;       (* Boolean theory and basic derived rules            *)
-loads "drule.ml";;      (* Additional derived rules                          *)
-loads "tactics.ml";;    (* Tactics, tacticals and goal stack                 *)
+loads "equal.ml";;        (* Basic equality reasoning and conversionals      *)
+loads "bool.ml";;         (* Boolean theory and basic derived rules          *)
+loads "drule.ml";;        (* Additional derived rules                        *)
+loadt "tactic_types.ml";; (* Tactics, tacticals and goal stack               *)
+loadt "meta_tactic.ml";;
 
+loadt "tactics.ml";;      (* Tactics, tacticals and goal stack               *)
 loadt "meta_conj.ml";;
 
 loads "itab.ml";;       (* Toy prover for intuitionistic logic               *)

@@ -1,6 +1,7 @@
 needs "record.ml";;
 needs "more-lib.ml";;
 
+(* Automatically generate contiguous ids as needed by lookup. *)
 module Identifying(Ord: Orderedtype) :
 sig
   val lookup : Ord.t -> int
@@ -32,6 +33,14 @@ let thm_type_path =
   |> Env.lookup_type (Longident.Lident "thm")
   |> fst;;
 
+let rec get_ty_concl t = get_ty_concl_of_desc t.Types.desc
+and get_ty_concl_of_desc = function
+  | Types.Tconstr (p,_,_) -> Some p
+  | Types.Tarrow (_, _, c, _) -> get_ty_concl c
+  | Types.Tlink t -> get_ty_concl t
+  | Types.Tsubst t -> get_ty_concl t
+  | _ -> None;;
+
 let is_thm d =
   d.Types.val_type
   |> get_constr
@@ -58,7 +67,6 @@ module Identcmp =
     let compare id id' = compare (id.Ident.stamp) (id'.Ident.stamp)
   end
 module Identmap = Batmap.Make_ext(Identcmp)
-
 module Depmap =
   Batmap.Make_ext(struct type t = dep_info let compare = compare_dep_info end)
 
@@ -121,26 +129,26 @@ let rec tm_ty_consts = function
 
 module Meta =
   struct
-    type thm_origination = Toplevel | Conjunct of int
-    type ident_meta =
+    type 'a src =
       {
-        ident_id    : int;
-        ident_loc   : string * Location.t;
+        src_id      : int;
+        src_loc     : string * Location.t;
         filename_id : int;
-        ident_thm   : thm;
-        tracked_ids : int list;
+        src_meta    : 'a
       }
-    type meta =
+    type thm_origination = Toplevel | Conjunct of int
+    type thm_meta =
       {
-        tracking_src_loc : ident_meta * thm_origination;
-        tracked_deps     : (int * thm) list;
-        const_deps       : string list;
-        ty_const_deps    : string list;
-        new_consts       : string list;
-        new_ty_consts    : string list;
-        source_code_deps : ident_meta list;
+        thm_src            : ((int * thm) list * thm) src;
+        thm_origin         : thm_origination;
+        tracked_deps       : (int * thm) list;
+        const_deps         : string list;
+        ty_const_deps      : string list;
+        new_consts         : string list;
+        new_ty_consts      : string list;
+        dep_source_thms    : ((int * thm) list * thm) src list;
+        dep_source_tactics : (unit src * ((int * thm) list * thm) src list) list
       }
-
     module Json =
       struct
         open Ezjsonm
@@ -157,7 +165,7 @@ module Meta =
             [ "hyp", list of_tm (hyp thm)
             ; "concl", of_tm (concl thm)
             ]
-        let of_thm_type = function
+        let of_thm_origin = function
           | Toplevel ->  string "toplevel"
           | Conjunct n ->
              (* Convert the integer to a string for Neo4j. *)
@@ -166,43 +174,60 @@ module Meta =
           dict
             [ "name", string id.Ident.name
             ]
+        let strip_prefix pre str =
+          match Batstring.Exceptionless.split ~by:pre str with
+          | Some("",rest) -> rest
+          | _ -> failwith "strip_prefix";;
         let of_location loc =
-          let fname =
-            Batstring.lchop ~n:(Batstring.length !hol_dir + 1)
-                            (loc.Location.loc_start.Lexing.pos_fname) in
+          let fname = loc.Location.loc_start.Lexing.pos_fname in
+          let fname = tryfind (C strip_prefix fname) [!hol_dir; Sys.getcwd ()] in
           dict
             [ "filename", string fname
             ; "line", int loc.Location.loc_start.Lexing.pos_lnum
             ]
-        let of_ident_meta_id meta = int meta.ident_id
-        let of_ident_meta meta =
-          let name,loc = meta.ident_loc in
-          dict [ "ident_id", int meta.ident_id
-               ; "name", string name
-               ; "location", of_location loc
-               ; "tracked_ids", list int meta.tracked_ids
-               ; "stringified", string (string_of_thm meta.ident_thm)]
+        let fields_of_src of_meta src =
+          let name,loc = src.src_loc in
+          [ "src_id", int src.src_id
+          ; "name", string name
+          ; "location", of_location loc ]
+          @ of_meta src.src_meta
+        let src_id thm_meta = thm_meta.thm_src.src_id
+        let of_tactic_dep (tac,thms) =
+          dict
+            ["tactic", int tac.src_id
+            ;"theorem_arguments", list (int o fun m -> m.src_id) thms ]
+        let id_of_meta_src meta =
+          fst (src_id meta,meta.thm_src.src_id)
         let of_id_thm_meta (id,thm,meta) =
           dict
             [ "tracking_id", int id
-            ; "src_id", pair of_ident_meta_id of_thm_type meta.tracking_src_loc
+            ; "src_id", int (id_of_meta_src meta)
+            ; "as", of_thm_origin meta.thm_origin
             ; "theorem", of_thm thm
             ; "stringified", string (string_of_thm thm)
             ; "constants", list string (tm_consts (concl thm))
             ; "type_constants", list string (tm_ty_consts (concl thm))
             ; "new_constants", list string meta.new_consts
             ; "new_type_constants", list string meta.new_ty_consts
-            ; "tracked_dependencies", list (int o fst) meta.tracked_deps
-            ; "source_code_dependencies", list of_ident_meta_id meta.source_code_deps
+            ; "tracked_dependencies",
+              (list (int o fst) o fst) meta.thm_src.src_meta
+            ; "source_code_theorem_dependencies",
+              list (fun meta -> int meta.src_id) meta.dep_source_thms
+            ; "source_code_tactic_dependencies",
+              list of_tactic_dep meta.dep_source_tactics
             ]
       end
   end
 
-let (meta_map : (thm * Meta.meta) Intmap.t ref) = ref Intmap.empty;;
-let (ident_meta_from_id_map : Meta.ident_meta Intmap.t ref) = ref Intmap.empty;;
+let (meta_map : (thm * Meta.thm_meta) Intmap.t ref) = ref Intmap.empty;;
+let (thm_src_from_id_map :
+       ((int * thm) list * thm) Meta.src Intmap.t ref) = ref Intmap.empty;;
 let (const_def_map : int list Stringmap.t ref) = ref Stringmap.empty;;
 let (ty_const_def_map : int list Stringmap.t ref) = ref Stringmap.empty;;
 
+(* get_deps will grab the immediate tracked dependencies of its argument.
+   get_trivial_duplicates thm will return any tracked theorem that is a duplicate of
+   thm and appears in thm's dependency graph.  *)
 let get_deps, get_trivial_duplicates =
   let (dep_resolve : (thm Intmap.t * thm Intmap.t Intmap.t) Depmap.t ref) =
     ref Depmap.empty in
@@ -221,7 +246,9 @@ let get_deps, get_trivial_duplicates =
            (find_duplicates thm) in
   get_deps,get_trivial_duplicates
 
-let meta_of_thm src_loc id thm =
+(* Construct meta datastructure of a theorem, source information, origin and
+identifier. *)
+let meta_of_thm src id thm_origin thm =
   let const_subdeps =
     let deps = get_deps thm in
     Batlist.fold_left
@@ -241,7 +268,8 @@ let meta_of_thm src_loc id thm =
                     Stringmap.modify_def [id] c (fun ids -> union [id] ids) map)
                    !ty_const_def_map new_ty_consts;
   {
-    Meta.tracking_src_loc = src_loc;
+    Meta.thm_src = src;
+    Meta.thm_origin = thm_origin;
     Meta.tracked_deps = get_deps thm;
     Meta.const_deps = const_deps thm;
     Meta.ty_const_deps = ty_const_deps thm;
@@ -249,69 +277,112 @@ let meta_of_thm src_loc id thm =
       List.filter (not o C mem const_subdeps) (const_deps thm);
     Meta.new_ty_consts =
       List.filter (not o C mem ty_const_subdeps) (ty_const_deps thm);
-    Meta.source_code_deps = []
+    Meta.dep_source_thms = [];
+    Meta.dep_source_tactics = []
   };;
 
-let collect_ids, register_ident =
-  let (ident_meta_map : Meta.ident_meta Identmap.t ref) =
-    ref Identmap.empty in
-  let collect_ids tree =
-    let stamps = ref Identmap.empty in
-    let module Idcollector =
+(* Turn iterators into folds. *)
+let (mk_fold : (('a -> unit) -> 't -> unit)
+               -> ('b -> 'a -> 'b) -> 'b -> 't -> 'b) =
+  fun iter f b t ->
+  let b' = ref b in
+  iter (fun x -> b' := f !b' x) t;
+  !b';;
+
+(* Fold over the identifiers of an Ocaml AST structure and an expression. *)
+let fold_ident_str, fold_ident_expr =
+  let folds f =
+    let module Ident_iterator =
       Typedtreeiter.Makeiterator(
           struct
             include Typedtreeiter.Defaultiteratorargument
             let enter_expression exp =
               match exp.Typedtree.exp_desc with
-              | Typedtree.Texp_ident (Path.Pident ident,_,desc) ->
-                 (match Identmap.Exceptionless.find ident !ident_meta_map with
-                  | Some meta -> stamps := Identmap.add ident meta !stamps
-                  | None -> ())
+              | Typedtree.Texp_ident (Path.Pident ident,_,_) -> f ident
               | _ -> ()
           end) in
-    Idcollector.iter_structure tree;
-    map snd (Identmap.to_list !stamps) in
-  let register_ident =
-    let module Filename_ids =
-      Identifying(struct type t = string let compare = compare end) in
-    let ident_id_counter = ref 0 in
-    fun ident thm vd ids ->
-    match Identmap.Exceptionless.find ident !ident_meta_map with
-    | None ->
-       let ident_id = !ident_id_counter in
-       incr ident_id_counter;
-       let filename = vd.Types.val_loc.Location.loc_start.Lexing.pos_fname in
-       let filename_id = Filename_ids.lookup filename in
-       let meta =
-         {
-           Meta.ident_id = ident_id;
-           Meta.ident_loc = ident.Ident.name, vd.Types.val_loc;
-           Meta.filename_id = filename_id;
-           Meta.ident_thm = thm;
-           Meta.tracked_ids = ids
-         } in
-       ident_meta_map := Identmap.add ident meta !ident_meta_map;
-       ident_meta_from_id_map := Intmap.add ident_id meta !ident_meta_from_id_map;
-       meta
-    | Some meta -> meta in
-  collect_ids, register_ident;;
+    Ident_iterator.iter_structure,
+    Ident_iterator.iter_expression in
+  (fun f b t -> mk_fold (fst o folds) f b t),
+  (fun f b t -> mk_fold (snd o folds) f b t);;
+
+(* Construct an ident map to data generated by of_ident. *)
+let mk_src_fns of_ident =
+  let (ident_map : 'a Identmap.t ref) = ref Identmap.empty in
+  let register_ident ident x =
+    match Identmap.Exceptionless.find ident !ident_map with
+    | None -> let y = of_ident ident x in
+              ident_map := Identmap.add ident y !ident_map;
+              y
+    | Some x -> x in
+  let find_meta ident =
+    Identmap.Exceptionless.find ident !ident_map in
+  register_ident, find_meta;;
+
+(* Construct meta-data for idents. *)
+let mk_src =
+  let module Filename_ids =
+    Identifying(struct type t = string let compare = compare end) in
+  fun () ->
+  let ident_id_counter = ref 0 in
+  fun ident vd ->
+    let ident_id = !ident_id_counter in
+    incr ident_id_counter;
+    let filename = vd.Types.val_loc.Location.loc_start.Lexing.pos_fname in
+    let filename_id = Filename_ids.lookup filename in
+    let meta =
+      {
+        Meta.src_id = ident_id;
+        Meta.src_loc = ident.Ident.name, vd.Types.val_loc;
+        Meta.filename_id = filename_id;
+        Meta.src_meta = ()
+      } in
+    meta;;
+
+(* Add tracking info to a thm, or else return existing tracking info if duplicate. *)
+let with_tracking_nodup thm =
+  match Batoption.map get_tracking (get_dep_info thm) with
+  | Some (Tracked id) -> id,thm
+  | _ ->
+     match get_trivial_duplicates thm with
+     | [] -> with_tracking thm
+     | [idthm] -> idthm
+     | _ -> failwith "Theorem has two duplicates in its dependency graph."
+
+(* Registration of thm identifiers. *)
+let register_thm_ident, find_thm_src =
+  let mk_src = mk_src () in
+  let mk_src ident (vd,meta) =
+    { mk_src ident vd with Meta.src_meta = meta } in
+  let reg, find = mk_src_fns mk_src in
+  (fun ident vd meta ->
+   let meta = reg ident (vd,meta) in
+   thm_src_from_id_map :=
+     Intmap.add meta.src_id meta !thm_src_from_id_map;
+   meta),
+  find;;
 
 let (meta_diff_hook : (unit,'a list) Toploop.env_diff_hooks) =
   let register_toplevel_thm ident vd dep_idents thm =
-    match get_trivial_duplicates thm with
-    | [] ->
-       let id,thm = with_tracking thm in
-       Toploop.setvalue (Ident.name ident) (Obj.repr thm);
-       let ident_meta = register_ident ident thm vd [id] in
-       let src_loc = ident_meta, Meta.Toplevel in
-       let meta = meta_of_thm src_loc id thm in
-       let meta = { meta with Meta.source_code_deps = dep_idents } in
-       meta_map := Intmap.add id (thm, meta) !meta_map
-    | [id,dup] -> ignore (register_ident ident dup vd [id]) in
+    let id,thm = with_tracking_nodup thm in
+    Toploop.setvalue (Ident.name ident) (Obj.repr thm);
+    let src = register_thm_ident ident vd ([id,thm],thm) in
+    let meta =
+      {
+        meta_of_thm src id Meta.Toplevel thm with
+        Meta.dep_source_thms = dep_idents
+      } in
+    meta_map := Intmap.add id (thm, meta) !meta_map in
+  let f ident_map ident =
+    match find_thm_src ident with
+    | Some meta -> Identmap.add ident meta ident_map
+    | None -> ident_map in
   {
     (env_diff_default () []) with
     Toploop.env_diff_parse =
-      (fun tree _ _ () -> collect_ids tree);
+      (fun tree _ _ () -> fold_ident_str f Identmap.empty tree
+                          |> Identmap.to_list
+                          |> map snd);
     Toploop.env_diff_ident =
       (fun ident vd dep_idents ->
        if is_thm vd then
@@ -319,7 +390,7 @@ let (meta_diff_hook : (unit,'a list) Toploop.env_diff_hooks) =
            let thm = Obj.obj (Toploop.getvalue (Ident.name ident)) in
            register_toplevel_thm ident vd dep_idents thm
          end;
-       dep_idents)
+       [])
   };;
 
 Toploop.set_env_diff_hook () meta_diff_hook;;
