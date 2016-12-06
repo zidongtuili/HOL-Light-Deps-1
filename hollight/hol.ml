@@ -164,8 +164,9 @@ module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
     let is_subsumed_by thm1 thm2 = H.concl thm1 = H.concl thm2
   end
 
-module Hol_record = Record_hol_kernel(Hol)(Setack_noasm(Hol));;
-include Hol_record;;
+module Hol_cert = Hol;;
+module Hol = Record_hol_kernel(Hol_cert)(Setack_noasm(Hol_cert));;
+include Hol;;
 let compare = Pervasives.compare;;
 
 let equals_thm th th' = dest_thm th = dest_thm th';;
