@@ -26,7 +26,7 @@ type tactic_meta =
   }
 
 let (tactic_src_from_id_map :
-       unit Meta.src Intmap.t ref) = ref Intmap.empty;;
+       unit Meta.src Batintmap.t ref) = ref Batintmap.empty;;
 
 (* Registration of tactic identifiers. *)
 let register_tactic_ident, find_tactic_src =
@@ -34,7 +34,7 @@ let register_tactic_ident, find_tactic_src =
   (fun ident vd ->
    let meta = reg ident vd in
    tactic_src_from_id_map :=
-     Intmap.add meta.Meta.src_id meta !tactic_src_from_id_map;
+     Batintmap.add meta.Meta.src_id meta !tactic_src_from_id_map;
    meta),
   find;;
 

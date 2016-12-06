@@ -60,7 +60,7 @@ let env_diff_default s t =
   };;
 
 module Stringmap = Batmap.Make_ext(struct type t = string let compare = compare end)
-module Intmap = Batmap.Make_ext(struct type t = int let compare = compare end)
+module Batintmap = Batmap.Make_ext(struct type t = int let compare = compare end)
 module Identcmp =
   struct
     type t = Ident.t
@@ -80,14 +80,14 @@ let get_iterated_deps info_deps thm =
     | None ->
        let depinfos = thm_deps thm in
        let deps,trans_deps,info_deps =
-         List.fold_left f (Intmap.empty,Intmap.empty,info_deps) depinfos in
+         List.fold_left f (Batintmap.empty,Batintmap.empty,info_deps) depinfos in
        deps,trans_deps,Depmap.add info (deps,trans_deps) info_deps
   and f (deps,trans_deps,info_deps) (dep,info) =
     (* We're accumulating dependencies at the same level as (dep,info). *)
     let sub_deps,sub_trans_deps,info_deps = iterated_deps info_deps (dep,info) in
     (* sub_deps and sub_trans_deps are, respectively, the dependencies and transitive
        dependencies of dep. *)
-    let union = Intmap.merge (fun _ x y -> sum_option_fst x y) in
+    let union = Batintmap.merge (fun _ x y -> sum_option_fst x y) in
     (* Update the deps. If dep is tracked, we add it to the accumulating deps, and
     add its own dependencies to its transitive dependency map. If dep is a duplicate,
     we leave the transitive dependency map unchanged. If the duplicate isn't a
@@ -96,16 +96,16 @@ let get_iterated_deps info_deps thm =
     tracked theorem to the accumulating deps. *)
     let deps, trans_deps =
       match get_tracking info with
-      | Tracked id -> Intmap.add id dep deps, Intmap.add id sub_deps trans_deps
+      | Tracked id -> Batintmap.add id dep deps, Batintmap.add id sub_deps trans_deps
       | Duplicate ids ->
          let deps =
-           match filter (C Intmap.mem sub_trans_deps) ids with
+           match filter (C Batintmap.mem sub_trans_deps) ids with
            | [] -> union deps sub_deps
-           | [dup_id] -> Intmap.add dup_id dep deps
+           | [dup_id] -> Batintmap.add dup_id dep deps
            | _ -> failwith "Duplicate has two proofs in the dependency graph." in
          deps, trans_deps in
     deps,trans_deps,info_deps in
-  List.fold_left f (Intmap.empty,Intmap.empty,info_deps) (thm_deps thm)
+  List.fold_left f (Batintmap.empty,Batintmap.empty,info_deps) (thm_deps thm)
 
 let rec tm_consts = function
   | Var _ -> []
@@ -219,9 +219,9 @@ module Meta =
       end
   end
 
-let (meta_map : (thm * Meta.thm_meta) Intmap.t ref) = ref Intmap.empty;;
+let (meta_map : (thm * Meta.thm_meta) Batintmap.t ref) = ref Batintmap.empty;;
 let (thm_src_from_id_map :
-       ((int * thm) list * thm) Meta.src Intmap.t ref) = ref Intmap.empty;;
+       ((int * thm) list * thm) Meta.src Batintmap.t ref) = ref Batintmap.empty;;
 let (const_def_map : int list Stringmap.t ref) = ref Stringmap.empty;;
 let (ty_const_def_map : int list Stringmap.t ref) = ref Stringmap.empty;;
 
@@ -229,20 +229,20 @@ let (ty_const_def_map : int list Stringmap.t ref) = ref Stringmap.empty;;
    get_trivial_duplicates thm will return any tracked theorem that is a duplicate of
    thm and appears in thm's dependency graph.  *)
 let get_deps, get_trivial_duplicates =
-  let (dep_resolve : (thm Intmap.t * thm Intmap.t Intmap.t) Depmap.t ref) =
+  let (dep_resolve : (thm Batintmap.t * thm Batintmap.t Batintmap.t) Depmap.t ref) =
     ref Depmap.empty in
   let get_deps thm =
     let deps, trans_deps, the_dep_resolve = get_iterated_deps !dep_resolve thm in
     dep_resolve := the_dep_resolve;
-    match map_option (fun (id,_) -> Intmap.Exceptionless.find id trans_deps)
+    match map_option (fun (id,_) -> Batintmap.Exceptionless.find id trans_deps)
                      (find_duplicates thm) with
-    | [] -> deps |> Intmap.to_list
-    | [deps] -> deps |> Intmap.to_list
+    | [] -> deps |> Batintmap.to_list
+    | [deps] -> deps |> Batintmap.to_list
     | _ -> failwith "Duplicate has two proofs in the dependency graph." in
   let get_trivial_duplicates thm =
     let deps, trans_deps, the_dep_resolve = get_iterated_deps !dep_resolve thm in
     dep_resolve := the_dep_resolve;
-    filter (fun (id,thm) -> Intmap.mem id trans_deps or Intmap.mem id deps)
+    filter (fun (id,thm) -> Batintmap.mem id trans_deps or Batintmap.mem id deps)
            (find_duplicates thm) in
   get_deps,get_trivial_duplicates
 
@@ -358,7 +358,7 @@ let register_thm_ident, find_thm_src =
   (fun ident vd meta ->
    let meta = reg ident (vd,meta) in
    thm_src_from_id_map :=
-     Intmap.add meta.src_id meta !thm_src_from_id_map;
+     Batintmap.add meta.src_id meta !thm_src_from_id_map;
    meta),
   find;;
 
@@ -372,7 +372,7 @@ let (meta_diff_hook : (unit,'a list) Toploop.env_diff_hooks) =
         meta_of_thm src id Meta.Toplevel thm with
         Meta.dep_source_thms = dep_idents
       } in
-    meta_map := Intmap.add id (thm, meta) !meta_map in
+    meta_map := Batintmap.add id (thm, meta) !meta_map in
   let f ident_map ident =
     match find_thm_src ident with
     | Some meta -> Identmap.add ident meta ident_map

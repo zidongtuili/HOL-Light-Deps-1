@@ -49,7 +49,7 @@ let meta_conj_tactic_diff_hook =
                     Meta.dep_source_thms = dep_source_thms;
                     Meta.dep_source_tactics = dep_source_tactics
                   } in
-                Intmap.add id (c,meta))
+                Batintmap.add id (c,meta))
                (zip_with_index (rev newly_tracked)) !meta_map
          end
        else if is_tactic vd then ignore (register_tactic_ident ident vd);
