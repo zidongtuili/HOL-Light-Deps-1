@@ -5,8 +5,8 @@
     src = fetchFromGitHub {
       owner  = "jrh13";
       repo   = "hol-light";
-      rev    = "10265313397476ddff4ce13e7bbb588025e7272c";
-      sha256 = "17b6a7vk9fhppl0h366y7pw6a9sknq1a8gxqg67dzqpb47vda1n0";
+      rev    = "6573d7767dd769890ff21f17050a4fd6c92d207c";
+      sha256 = "0q8flbsn4hnimxlv4ci87yx4kjlkk5m1z1ilbgzmlbwgghjmidnh";
     };
 
     buildInputs = with ocamlPackages; [ findlib ocaml camlp5_strict ];
