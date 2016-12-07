@@ -209,8 +209,7 @@ module Meta =
             ; "type_constants", list string (tm_ty_consts (concl thm))
             ; "new_constants", list string meta.new_consts
             ; "new_type_constants", list string meta.new_ty_consts
-            ; "tracked_dependencies",
-              (list (int o fst) o fst) meta.thm_src.src_meta
+            ; "tracked_dependencies", list (int o fst) meta.tracked_deps
             ; "source_code_theorem_dependencies",
               list (fun meta -> int meta.src_id) meta.dep_source_thms
             ; "source_code_tactic_dependencies",
