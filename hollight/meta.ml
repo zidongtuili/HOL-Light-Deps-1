@@ -59,7 +59,8 @@ let env_diff_default s t =
                                                Printf.printf "Exception!"; s)
   };;
 
-module Stringmap = Batmap.Make_ext(struct type t = string let compare = compare end)
+module Batstringmap =
+  Batmap.Make_ext(struct type t = string let compare = compare end)
 module Batintmap = Batmap.Make_ext(struct type t = int let compare = compare end)
 module Identcmp =
   struct
@@ -221,8 +222,8 @@ module Meta =
 let (meta_map : (thm * Meta.thm_meta) Batintmap.t ref) = ref Batintmap.empty;;
 let (thm_src_from_id_map :
        ((int * thm) list * thm) Meta.src Batintmap.t ref) = ref Batintmap.empty;;
-let (const_def_map : int list Stringmap.t ref) = ref Stringmap.empty;;
-let (ty_const_def_map : int list Stringmap.t ref) = ref Stringmap.empty;;
+let (const_def_map : int list Batstringmap.t ref) = ref Batstringmap.empty;;
+let (ty_const_def_map : int list Batstringmap.t ref) = ref Batstringmap.empty;;
 
 (* get_deps will grab the immediate tracked dependencies of its argument.
    get_trivial_duplicates thm will return any tracked theorem that is a duplicate of
@@ -260,11 +261,11 @@ let meta_of_thm src id thm_origin thm =
     List.filter (not o C mem ty_const_subdeps) (ty_const_deps thm) in
   const_def_map :=
     List.fold_left (fun map c ->
-                    Stringmap.modify_def [id] c (fun ids -> union [id] ids) map)
+                    Batstringmap.modify_def [id] c (fun ids -> union [id] ids) map)
                    !const_def_map new_consts;
   ty_const_def_map :=
     List.fold_left (fun map c ->
-                    Stringmap.modify_def [id] c (fun ids -> union [id] ids) map)
+                    Batstringmap.modify_def [id] c (fun ids -> union [id] ids) map)
                    !ty_const_def_map new_ty_consts;
   {
     Meta.thm_src = src;
