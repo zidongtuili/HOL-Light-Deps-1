@@ -117,6 +117,13 @@ module Noack : Acc_map with type k = thm =
     let is_subsumed_by _ _ = false
   end
 
+module Notag : Monad.Monoid =
+  struct
+    type t = unit
+    let zero () = ()
+    let plus () () = ()
+  end
+
 module Setack(H : Hol_kernel) : Acc_map with type k = H.thm =
   struct
     type k = H.thm
@@ -165,7 +172,7 @@ module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
   end
 
 module Hol_cert = Hol;;
-module Hol = Record_hol_kernel(Hol_cert)(Setack_noasm(Hol_cert));;
+module Hol = Record_hol_kernel(Hol_cert)(Setack_noasm(Hol_cert))(Notag);;
 include Hol;;
 let compare = Pervasives.compare;;
 
