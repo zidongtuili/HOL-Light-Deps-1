@@ -106,15 +106,9 @@ let (THEN),(THENL) =
   then_,thenl_;;
 
 let (add_rose : string -> (term list * instantiation) * goal list * justification
-                       -> goalstate) = fun x gstate ->
+                       -> goalstate) = fun name gstate ->
   let inst,gls,j = gstate in
-  inst,gls,j,rose_split (length gls) x;;
-
-let (term_rose : string -> (term list * instantiation) * goal list * justification
-                 -> goalstate) = fun x gstate ->
-  let inst,gls,j = gstate in
-  inst,gls,j,Rose_bud (fun roses ->
-                       Rose (x,[]), Batlist.drop (length gls) roses);;
+  inst,gls,j,rose_split (length gls) name;;
 
 let ((ORELSE): tactic -> tactic -> tactic) =
   fun tac1 tac2 g ->
