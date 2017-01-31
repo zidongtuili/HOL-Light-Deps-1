@@ -121,7 +121,7 @@ let (NO_TAC: tactic) =
   FAIL_TAC "NO_TAC";;
 
 let (ALL_TAC:tactic) =
-  fun g -> add_rose "ALL_TAC" (null_meta,[g],(fun _ [th] -> th));;
+  fun g -> null_meta,[g],(fun _ [th] -> th),Rose_bud (fun (r::rs) -> r,rs);;
 
 let TRY tac =
   tac ORELSE ALL_TAC;;
