@@ -23,7 +23,7 @@ end =
 (* Identify theorems in Ocaml syntax tree. *)
 let rec get_constr t = get_constr_of_desc t.Types.desc
 and get_constr_of_desc = function
-  | Types.Tconstr (p,_,_) -> Some p
+  | Types.Tconstr (p,args,_) -> Some (p,args)
   | Types.Tlink t -> get_constr t
   | Types.Tsubst t -> get_constr t
   | _ -> None;;
@@ -44,7 +44,7 @@ and get_ty_concl_of_desc = function
 let is_thm d =
   d.Types.val_type
   |> get_constr
-  |> Batoption.map_default (Path.same thm_type_path) false;;
+  |> Batoption.map_default (Path.same thm_type_path o fst) false;;
 
 (* TODO: Exceptions here will be thrown in the other hook. These
    should only indicate bugs in the dependency tracking, but still,

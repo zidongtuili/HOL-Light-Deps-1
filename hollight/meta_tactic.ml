@@ -27,8 +27,8 @@ let rec tactic_antecedents d =
   and get_tactic_ty_expr_ants expr =
     let ants,c = get_ty_ants_concl expr in
     Batoption.bind (get_constr_of_desc c)
-                   (fun p -> get_tactic_path_ants p
-                             |> Batoption.map (fun ants' -> ants @ ants')) in
+                   (fun (p,_) -> get_tactic_path_ants p
+                                 |> Batoption.map (fun ants' -> ants @ ants')) in
   get_tactic_ty_expr_ants d.Types.val_type;;
 
 let is_tactic d = Batoption.is_some (tactic_antecedents d);;
