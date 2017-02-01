@@ -117,11 +117,19 @@ module Noack : Acc_map with type k = thm =
     let is_subsumed_by _ _ = false
   end
 
-module Notag : Monad.Monoid =
+type tac_tree = Tac_tree of string * int list * tac_tree list
+module Tacset = Batset.Make(struct type t = tac_tree let compare = compare end)
+
+module Tracking : (Monad.Monoid with type t = bool * Tacset.t) =
   struct
-    type t = unit
-    let zero () = ()
-    let plus () () = ()
+    type t = bool * Tacset.t
+    let zero () = (false,Tacset.empty)
+    let plus l r =
+      let (is_trackedl,tsl) = l in
+      let (is_trackedr,tsr) = r in
+      false,Tacset.union
+              (if is_trackedl then Tacset.empty else tsl)
+              (if is_trackedr then Tacset.empty else tsr)
   end
 
 module Setack(H : Hol_kernel) : Acc_map with type k = H.thm =
@@ -172,7 +180,7 @@ module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
   end
 
 module Hol_cert = Hol;;
-module Hol = Record_hol_kernel(Hol_cert)(Setack_noasm(Hol_cert))(Notag);;
+module Hol = Record_hol_kernel(Hol_cert)(Setack_noasm(Hol_cert))(Tracking);;
 include Hol;;
 let compare = Pervasives.compare;;
 

@@ -341,11 +341,12 @@ let mk_src =
 
 (* Add tracking info to a thm, or else return existing tracking info if duplicate. *)
 let with_tracking_nodup thm =
+  let confirm_tracking thm = modify_meta (fun (_,ts) -> (true,ts)) thm in
   match Batoption.map get_tracking (get_dep_info thm) with
-  | Some (Tracked id) -> id,thm
+  | Some (Tracked id) -> id,confirm_tracking thm
   | _ ->
      match get_trivial_duplicates thm with
-     | [] -> with_tracking thm
+     | [] -> let id,thm = with_tracking thm in id,confirm_tracking thm
      | [idthm] -> idthm
      | _ -> failwith "Theorem has two duplicates in its dependency graph."
 
@@ -358,7 +359,7 @@ let register_thm_ident, find_thm_src =
   (fun ident vd meta ->
    let meta = reg ident (vd,meta) in
    thm_src_from_id_map :=
-     Batintmap.add meta.src_id meta !thm_src_from_id_map;
+     Batintmap.add meta.Meta.src_id meta !thm_src_from_id_map;
    meta),
   find;;
 

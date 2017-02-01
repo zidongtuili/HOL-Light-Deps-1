@@ -855,7 +855,9 @@ let (TAC_PROOF : goal * tactic -> thm) =
   fun (g,tac) ->
     let gstate = mk_goalstate g in
     let _,sgs,just,_ = by tac gstate in
-    if sgs = [] then just null_inst []
+    if sgs = [] then let th = just null_inst [] in
+                     modify_meta (fun (is_tracked,ts) ->
+                                  is_tracked,Tacset.add t ts) th
     else failwith "TAC_PROOF: Unsolved goals";;
 
 let prove(t,tac) =
