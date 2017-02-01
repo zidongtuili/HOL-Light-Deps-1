@@ -1,4 +1,14 @@
-needs "drule.ml";;
+(* ========================================================================= *)
+(* System of tactics (slightly different from any traditional LCF method).   *)
+(*                                                                           *)
+(*       John Harrison, University of Cambridge Computer Laboratory          *)
+(*                                                                           *)
+(*            (c) Copyright, University of Cambridge 1998                    *)
+(*              (c) Copyright, John Harrison 1998-2007                       *)
+(*                 (c) Copyright, Marco Maggesi 2012                         *)
+(* ========================================================================= *)
+
+needs "roses.ml";;
 
 (* ------------------------------------------------------------------------- *)
 (* The common case of trivial instantiations.                                *)
@@ -29,10 +39,14 @@ type justification = instantiation -> thm list -> thm;;
 
 (* ------------------------------------------------------------------------- *)
 (* The goalstate stores the subgoals, justification, current instantiation,  *)
-(* and a list of metavariables.                                              *)
+(* a list of metavariables. and a recording of the current tactics used in a *)
+(* rose tree with holes.                                                     *)
 (* ------------------------------------------------------------------------- *)
 
-type goalstate = (term list * instantiation) * goal list * justification;;
+type goalstate = (term list * instantiation)
+                 * goal list
+                 * justification
+                 * string rose_bud;;
 
 (* ------------------------------------------------------------------------- *)
 (* A goalstack is just a list of goalstates. Could go for more...            *)
@@ -56,6 +70,11 @@ type refinement = goalstate -> goalstate;;
 (*  o A list of subgoals                                                     *)
 (*  o A justification f such that for any instantiation @ we have            *)
 (*    f(@) [A1@  |- g1@; ...; An@ |- gn@] = A(%;@) |- g(%;@)                 *)
+(*  o A rose tree of the component tactics used with holes for later tactics *)
 (* ------------------------------------------------------------------------- *)
 
 type tactic = goal -> goalstate;;
+
+type thm_tactic = thm -> tactic;;
+
+type thm_tactical = thm_tactic -> thm_tactic;;
