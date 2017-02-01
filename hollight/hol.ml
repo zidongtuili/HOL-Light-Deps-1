@@ -216,6 +216,8 @@ loadt "tactic_types.ml";; (* Tactics, tacticals and goal stack               *)
 loadt "meta_tactic.ml";;
 
 loadt "tactics.ml";;      (* Tactics, tacticals and goal stack               *)
+
+loadt "meta_boxed_tactics.ml";;
 loadt "meta_conj.ml";;
 
 loadt "itab.ml";;       (* Toy prover for intuitionistic logic               *)
