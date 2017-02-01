@@ -1,4 +1,28 @@
-needs "tactics.ml"
+needs "meta_tactic.ml"
+
+let rebind_boxed_tactic ident vd =
+  match tactic_antecedents vd with
+  | Some nb_ants ->
+     let tac_name = ident.Ident.name in
+     let box = BOX_TAC tac_name [] in
+     let rebind f =
+       tac_name
+       |> Toploop.getvalue
+       |> Obj.obj
+       |> f
+       |> Obj.repr
+       |> Toploop.setvalue tac_name in
+     let ap1 f = box o f in
+     let ap2 f = ap1 o f in
+     let ap3 f = ap2 o f in
+     let ap4 f = ap3 o f in
+     (match length nb_ants with
+      | 0 -> rebind box
+      | 1 -> rebind ap1
+      | 2 -> rebind ap2
+      | 3 -> rebind ap3
+      | 4 -> rebind ap4)
+  | None -> ();;
 
 let split_and_reprove thm =
   let (asl,c) = dest_thm thm in
@@ -52,8 +76,10 @@ let meta_conj_tactic_diff_hook =
                 Batintmap.add id (c,meta))
                (zip_with_index (rev newly_tracked)) !meta_map
          end
-       else if is_tactic vd then ignore (register_tactic_ident ident vd);
-       ([], []))
+       else if is_tactic vd then
+         rebind_boxed_tactic ident vd;
+         ignore (register_tactic_ident ident vd);
+         ([], []))
   };;
 
 Toploop.set_env_diff_hook () meta_conj_tactic_diff_hook;;

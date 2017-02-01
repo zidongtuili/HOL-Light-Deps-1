@@ -6,18 +6,32 @@ let tactic_type_path =
   |> Env.lookup_type (Longident.Lident "tactic")
   |> fst;;
 
-let rec is_tactic d =
-  let rec is_indirect_tactic_path = function
+let rec get_ty_ants_concl t = get_ty_ants_concl_of_desc t.Types.desc
+and get_ty_ants_concl_of_desc = function
+  | Types.Tconstr (p,_,_) as ty -> [],ty
+  | Types.Tarrow (_, a, c, _) -> let ants,c = get_ty_ants_concl c in (a::ants),c
+  | Types.Tlink t -> get_ty_ants_concl t
+  | Types.Tsubst t -> get_ty_ants_concl t
+  | t -> [],t;;
+
+let rec tactic_antecedents d =
+  let rec get_indirect_tactic_path_ants = function
     | Path.Pident p ->
        let id = Longident.Lident p.Ident.name in
        let decl = snd (Env.lookup_type id !Toploop.toplevel_env) in
-       Batoption.map_default is_tactic_ty_expr false (decl.Types.type_manifest)
-    | _ -> false
-  and is_tactic_path p =
-    Path.same p tactic_type_path or is_indirect_tactic_path p
-  and is_tactic_ty_expr expr =
-    expr |> get_ty_concl |> Batoption.map_default is_tactic_path false in
-  is_tactic_ty_expr d.Types.val_type;;
+       Batoption.map_default get_tactic_ty_expr_ants None (decl.Types.type_manifest)
+    | _ -> None
+  and get_tactic_path_ants p =
+    if Path.same p tactic_type_path then Some []
+    else get_indirect_tactic_path_ants p
+  and get_tactic_ty_expr_ants expr =
+    let ants,c = get_ty_ants_concl expr in
+    Batoption.bind (get_constr_of_desc c)
+                   (fun p -> get_tactic_path_ants p
+                             |> Batoption.map (fun ants' -> ants @ ants')) in
+  get_tactic_ty_expr_ants d.Types.val_type;;
+
+let is_tactic d = Batoption.is_some (tactic_antecedents d);;
 
 type tactic_meta =
   {
