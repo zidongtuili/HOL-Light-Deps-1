@@ -15,7 +15,7 @@ needs "tactics.ml";;
 
 let UNIFY_ACCEPT_TAC mvs th (asl,w) =
   let insts = term_unify mvs (concl th) w in
-  add_rose "UNIFY_ACCEPT_TAC"
+  add_rose "UNIFY_ACCEPT_TAC" [th]
            (([],insts),[],
             let th' = INSTANTIATE insts th in
             fun i [] -> INSTANTIATE i th');;

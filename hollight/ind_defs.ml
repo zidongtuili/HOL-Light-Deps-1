@@ -259,7 +259,7 @@ let MONO_TAC =
     fun (asl,w) ->
       let th1 = match_fn w in
       let ant,con = dest_imp(concl th1) in
-      add_rose "BACKCHAIN_TAC"
+      add_rose "BACKCHAIN_TAC" [th]
                (null_meta,[asl,ant],fun i [t] -> MATCH_MP (INSTANTIATE i th1) t)
   and MONO_ABS_TAC (asl,w) =
     let ant,con = dest_imp w in

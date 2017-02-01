@@ -105,10 +105,11 @@ let (THEN),(THENL) =
       else tacsequence gstate tac2l in
   then_,thenl_;;
 
-let (add_rose : string -> (term list * instantiation) * goal list * justification
-                       -> goalstate) = fun name gstate ->
+let (add_rose : string -> thm list
+                -> (term list * instantiation) * goal list * justification
+                -> goalstate) = fun name thms gstate ->
   let inst,gls,j = gstate in
-  inst,gls,j,rose_split (length gls) name;;
+  inst,gls,j,rose_split (length gls) (name,thms);;
 
 let ((ORELSE): tactic -> tactic -> tactic) =
   fun tac1 tac2 g ->
@@ -189,7 +190,7 @@ let FIRST_TCL ttcll =
 
 let (LABEL_TAC: string -> thm_tactic) =
   fun s thm (asl,w) ->
-  add_rose "LABEL_TAC"
+  add_rose "LABEL_TAC" [thm]
            (null_meta,[(s,thm)::asl,w],
             (fun i [th] -> PROVE_HYP (INSTANTIATE_ALL i thm) th));;
 
@@ -271,7 +272,7 @@ let (ACCEPT_TAC: thm_tactic) =
   let propagate_thm th i [] = INSTANTIATE_ALL i th in
   fun th (asl,w) ->
     if aconv (concl th) w then
-      add_rose "ACCEPT_TAC" (null_meta,[],propagate_thm th)
+      add_rose "ACCEPT_TAC" [th] (null_meta,[],propagate_thm th)
     else failwith "ACCEPT_TAC";;
 
 (* ------------------------------------------------------------------------- *)
@@ -290,9 +291,10 @@ let (CONV_TAC: conv -> tactic) =
     if not(aconv l w) then failwith "CONV_TAC: bad equation" else
     if r = t_tm then ACCEPT_TAC(EQT_ELIM th) g else
     let th' = SYM th in
-    add_rose "CONV_TAC" (null_meta,
-                         [asl,r],
-                         (fun i [th] -> EQ_MP (INSTANTIATE_ALL i th') th));;
+    add_rose "CONV_TAC" [th]
+             (null_meta,
+              [asl,r],
+              (fun i [th] -> EQ_MP (INSTANTIATE_ALL i th') th));;
 
 (* ------------------------------------------------------------------------- *)
 (* Tactics for equality reasoning.                                           *)
@@ -310,7 +312,7 @@ let (ABS_TAC: tactic) =
         and rv,rb = dest_abs r in
         let avoids = itlist (union o thm_frees o snd) asl (frees w) in
         let v = mk_primed_var avoids lv in
-        add_rose "ABS_TAC"
+        add_rose "ABS_TAC" []
                  (null_meta,
                   [asl,mk_eq(vsubst[v,lv] lb,vsubst[v,rv] rb)],
                   (fun i [th] -> let ath = ABS v th in
@@ -322,7 +324,7 @@ let (MK_COMB_TAC: tactic) =
     try let l,r = dest_eq gl in
         let f,x = dest_comb l
         and g,y = dest_comb r in
-        add_rose "MK_COMB_TAC"
+        add_rose "MK_COMB_TAC" []
                  (null_meta,
                   [asl,mk_eq(f,g); asl,mk_eq(x,y)],
                   (fun _ [th1;th2] -> MK_COMB(th1,th2)))
@@ -373,7 +375,7 @@ let (DISCH_TAC: tactic) =
   fun (asl,w) ->
     try let ant,c = dest_imp w in
         let th1 = ASSUME ant in
-        add_rose "DISCH_TAC"
+        add_rose "DISCH_TAC" []
                  (null_meta,
                   [("",th1)::asl,c],
                   (fun i [th] -> DISCH (instantiate i ant) th))
@@ -381,7 +383,7 @@ let (DISCH_TAC: tactic) =
       try
         let ant = dest_neg w in
         let th1 = ASSUME ant in
-        add_rose "DISCH_TAC"
+        add_rose "DISCH_TAC" []
                  (null_meta,
                   [("",th1)::asl,f_tm],
                   (fun i [th] -> NOT_INTRO(DISCH (instantiate i ant) th)))
@@ -389,7 +391,7 @@ let (DISCH_TAC: tactic) =
 
 let (MP_TAC: thm_tactic) =
   fun thm (asl,w) ->
-  add_rose "MP_TAC"
+  add_rose "MP_TAC" []
            (null_meta,
             [asl,mk_imp(concl thm,w)],
             (fun i [th] -> MP th (INSTANTIATE_ALL i thm)))
@@ -397,7 +399,7 @@ let (MP_TAC: thm_tactic) =
 let (EQ_TAC: tactic) =
   fun (asl,w) ->
     try let l,r = dest_eq w in
-        add_rose "EQ_TAC"
+        add_rose "EQ_TAC" []
                  (null_meta,
                   [asl, mk_imp(l,r); asl, mk_imp(r,l)],
                   (fun _ [th1; th2] -> IMP_ANTISYM_RULE th1 th2))
@@ -407,7 +409,7 @@ let (UNDISCH_TAC: term -> tactic) =
  fun tm (asl,w) ->
    try let sthm,asl' = remove (fun (_,asm) -> aconv (concl asm) tm) asl in
        let thm = snd sthm in
-       add_rose "UNDISCH_TAC"
+       add_rose "UNDISCH_TAC" [thm]
                 (null_meta,
                  [asl',mk_imp(tm,w)],
                  (fun i [th] -> MP th (INSTANTIATE_ALL i thm)))
@@ -415,7 +417,7 @@ let (UNDISCH_TAC: term -> tactic) =
 
 let (SPEC_TAC: term * term -> tactic) =
   fun (t,x) (asl,w) ->
-  try add_rose "SPEC_TAC"
+  try add_rose "SPEC_TAC" []
                (null_meta,
                 [asl, mk_forall(x,subst[x,t] w)],
                 (fun i [th] -> SPEC (instantiate i t) th))
@@ -438,7 +440,7 @@ let (X_GEN_TAC: term -> tactic),
         let avoids = itlist (union o thm_frees o snd) asl (frees w) in
         if mem x' avoids then failwith "X_GEN_TAC: invalid variable" else
         let afn = CONV_RULE(GEN_ALPHA_CONV x) in
-        add_rose "X_GEN_TAC"
+        add_rose "X_GEN_TAC" []
                  (null_meta,
                   [asl,vsubst[x',x] bod],
                   (fun i [th] -> afn (GEN x' th)))
@@ -453,7 +455,7 @@ let (X_GEN_TAC: term -> tactic),
           let avoids = itlist (union o frees o concl o snd) asl
                               (union (frees w) (thm_frees xth)) in
           if mem x' avoids then failwith "X_CHOOSE_TAC: invalid variable" else
-            add_rose "X_CHOOSE_TAC"
+            add_rose "X_CHOOSE_TAC" []
                      (null_meta,
                       [("",xth')::asl,w],
                       (fun i [th] -> CHOOSE(x',INSTANTIATE_ALL i xth) th))
@@ -461,7 +463,7 @@ let (X_GEN_TAC: term -> tactic),
     let v,bod = try dest_exists w with Failure _ ->
                 failwith "EXISTS_TAC: Goal not existentially quantified" in
     let _ = tactic_type_compatibility_check "EXISTS_TAC" v t in
-    add_rose "EXISTS_TAC"
+    add_rose "EXISTS_TAC" []
              (null_meta,
               [asl,vsubst[t,v] bod],
               (fun i [th] -> EXISTS (instantiate i w,instantiate i t) th)) in
@@ -488,7 +490,7 @@ let (CHOOSE_TAC: thm_tactic) =
 let (CONJ_TAC: tactic) =
   fun (asl,w) ->
     try let l,r = dest_conj w in
-        add_rose "CONJ_TAC"
+        add_rose "CONJ_TAC" []
                  (null_meta,
                   [asl,l; asl,r],
                   (fun _ [th1;th2] -> CONJ th1 th2))
@@ -497,7 +499,7 @@ let (CONJ_TAC: tactic) =
 let (DISJ1_TAC: tactic) =
   fun (asl,w) ->
     try let l,r = dest_disj w in
-        add_rose "DISJ1_TAC"
+        add_rose "DISJ1_TAC" []
                  (null_meta,
                   [asl,l],
                   (fun i [th] -> DISJ1 th (instantiate i r)))
@@ -506,7 +508,7 @@ let (DISJ1_TAC: tactic) =
 let (DISJ2_TAC: tactic) =
   fun (asl,w) ->
     try let l,r = dest_disj w in
-        add_rose "DISJ2_TAC"
+        add_rose "DISJ2_TAC" []
                  (null_meta,
                   [asl,r],
                   (fun i [th] -> DISJ2 (instantiate i l) th))
@@ -519,7 +521,7 @@ let (DISJ_CASES_TAC: thm_tactic) =
         let thl = ASSUME l
         and thr = ASSUME r in
         fun (asl,w) ->
-        add_rose "DISJ_CASES_TAC"
+        add_rose "DISJ_CASES_TAC" [dth]
                  (null_meta,
                   [("",thl)::asl,w; ("",thr)::asl,w],
                   (fun i [th1;th2] -> DISJ_CASES (INSTANTIATE_ALL i dth) th1 th2))
@@ -529,14 +531,14 @@ let (CONTR_TAC: thm_tactic) =
   let propagate_thm th i [] = INSTANTIATE_ALL i th in
   fun cth (asl,w) ->
     try let th = CONTR w cth in
-        add_rose "CONTR_TAC" (null_meta, [], propagate_thm th)
+        add_rose "CONTR_TAC" [th] (null_meta, [], propagate_thm th)
     with Failure _ -> failwith "CONTR_TAC";;
 
 let (MATCH_ACCEPT_TAC:thm_tactic) =
   let propagate_thm th i [] = INSTANTIATE_ALL i th in
   let rawtac th (asl,w) =
     try let ith = PART_MATCH I th w in
-        add_rose "MATCH_ACCEPT_TAC" (null_meta,[],propagate_thm ith)
+        add_rose "MATCH_ACCEPT_TAC" [th] (null_meta,[],propagate_thm ith)
     with Failure _ -> failwith "ACCEPT_TAC" in
   fun th -> REPEAT GEN_TAC THEN rawtac th;;
 
@@ -557,7 +559,7 @@ let (MATCH_MP_TAC :thm_tactic) =
     let match_fun = PART_MATCH (snd o dest_imp) sth in
     fun (asl,w) -> try let xth = match_fun w in
                        let lant = fst(dest_imp(concl xth)) in
-                       add_rose "MATCH_MP_TAC"
+                       add_rose "MATCH_MP_TAC" [th]
                                 (null_meta,
                                  [asl,lant],
                                  (fun i [th] -> MP (INSTANTIATE_ALL i xth) th))
@@ -674,7 +676,7 @@ let (SUBGOAL_THEN: term -> thm_tactic -> tactic) =
   (fun i l -> PROVE_HYP (hd l) (just i (tl l))),
   Rose_bud (fun rose::roses ->
             let rose',roses' = bloom rosebud roses in
-            Rose ("SUBGOAL_THEN",[rose;rose']), roses');;
+            Rose (("SUBGOAL_THEN",[]),[rose;rose']), roses');;
 
 
 let SUBGOAL_TAC s tm prfs =
@@ -696,7 +698,7 @@ let (X_META_EXISTS_TAC: term -> tactic) =
   fun t (asl,w) ->
     try if not (is_var t) then fail() else
         let v,bod = dest_exists w in
-        add_rose "X_META_EXISTS_TAC"
+        add_rose "X_META_EXISTS_TAC" []
                  (([t],null_inst),[asl,vsubst[t,v] bod],
                   (fun i [th] -> EXISTS (instantiate i w,instantiate i t) th))
     with Failure _ -> failwith "X_META_EXISTS_TAC";;
@@ -710,7 +712,7 @@ let META_EXISTS_TAC ((asl,w) as gl) =
 let (META_SPEC_TAC: term -> thm -> tactic) =
   fun t thm (asl,w) ->
     let sth = SPEC t thm in
-    add_rose "META_SPEC_TAC"
+    add_rose "META_SPEC_TAC" [thm]
              (([t],null_inst),[(("",sth)::asl),w],
               fun i [th] -> PROVE_HYP (SPEC (instantiate i t) thm) th);;
 
@@ -739,8 +741,8 @@ let ANTS_TAC =
   MATCH_MP_TAC th THEN CONJ_TAC;;
 
 (* Rebox tactic recording. We currently discard the recorded subtactics. *)
-let (BOX_TAC : string -> tactic -> tactic) = fun x tac g ->
-  let inst,gls,j,_ = tac g in add_rose x (inst,gls,j);;
+let (BOX_TAC : string -> thm list -> tactic -> tactic) = fun name thms tac g ->
+  let inst,gls,j,_ = tac g in add_rose name thms (inst,gls,j);;
 
 (* ------------------------------------------------------------------------- *)
 (* A printer for goals etc.                                                  *)
