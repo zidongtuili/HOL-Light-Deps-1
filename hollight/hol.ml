@@ -115,9 +115,11 @@ module Noack : Acc_map with type k = thm =
     let find _ () = None
     let filter _ () = ()
     let is_subsumed_by _ _ = false
-  end
+  end;;
 
-type tac_tree = Tac_tree of string * int list * tac_tree list
+loadt "roses.ml";;
+
+type tac_tree = (string * int list) rose_tree
 module Tacset = Batset.Make(struct type t = tac_tree let compare = compare end)
 
 module Tracking : (Monad.Monoid with type t = bool * Tacset.t) =

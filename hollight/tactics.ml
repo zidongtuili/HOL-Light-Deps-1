@@ -105,11 +105,17 @@ let (THEN),(THENL) =
       else tacsequence gstate tac2l in
   then_,thenl_;;
 
+let is_tracked th =
+  Batoption.bind (get_dep_info th)
+    ((function
+       | Tracked id -> Some id
+       | _ -> None) o get_tracking)
+
 let (add_rose : string -> thm list
                 -> (term list * instantiation) * goal list * justification
-                -> goalstate) = fun name thms gstate ->
+                -> goalstate) = fun name ths gstate ->
   let inst,gls,j = gstate in
-  inst,gls,j,rose_split (length gls) (name,thms);;
+  inst,gls,j,rose_split (length gls) (name,Batlist.filter_map is_tracked ths);;
 
 let ((ORELSE): tactic -> tactic -> tactic) =
   fun tac1 tac2 g ->
@@ -854,10 +860,11 @@ let (mk_goalstate:goal->goalstate) =
 let (TAC_PROOF : goal * tactic -> thm) =
   fun (g,tac) ->
     let gstate = mk_goalstate g in
-    let _,sgs,just,_ = by tac gstate in
+    let _,sgs,just,rose_bud = by tac gstate in
     if sgs = [] then let th = just null_inst [] in
-                     modify_meta (fun (is_tracked,ts) ->
-                                  is_tracked,Tacset.add t ts) th
+                     let rose,_ = bloom rose_bud [] in
+                     modify_meta (fun (is_tracked,_) ->
+                                  is_tracked,Tacset.singleton rose) th
     else failwith "TAC_PROOF: Unsolved goals";;
 
 let prove(t,tac) =
