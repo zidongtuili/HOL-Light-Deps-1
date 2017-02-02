@@ -81,5 +81,6 @@ let meta_tactic_diff_hook =
            ignore (register_tactic_ident ident vd)
          end;
        ([], []))
-
   };;
+
+Toploop.set_env_diff_hook () meta_tactic_diff_hook;;
