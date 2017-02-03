@@ -182,7 +182,7 @@ let (rebind_magically : Ident.t -> Types.value_description
 
 let (install_tactic_transformer :
        (Ident.t -> Types.value_description -> Obj.t -> Obj.t)
-       -> unit) =
+       -> unit -> unit) =
   fun box ->
   let hook =
     {
@@ -217,7 +217,7 @@ let install_tactic_boxer () =
                       (fun thms tac -> BOX_TAC ident thms tac)
                       (Obj.obj tac));;
 
-install_renaming_tactic_boxer ();;
+let restore_hook = install_renaming_tactic_boxer ();;
 
 (* ------------------------------------------------------------------------- *)
 (* Basic tactic to use a theorem equal to the goal. Does *no* matching.      *)
@@ -270,7 +270,7 @@ let (mk_goalstate:goal->goalstate) =
       Rose_bud (fun (rose::roses) -> rose,roses)
     else failwith "mk_goalstate: Non-boolean goal";;
 
-install_tactic_boxer ();;
+let restore_hook = install_tactic_boxer ();;
 
 let (by:tactic->refinement) =
   fun tac ((mvs,inst),gls,just,rosebud) ->

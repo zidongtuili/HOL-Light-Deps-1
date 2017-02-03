@@ -62,4 +62,4 @@ let meta_conj_tactic_diff_hook =
          ([], []))
   };;
 
-Toploop.set_env_diff_hook () meta_conj_tactic_diff_hook;;
+let restore_hook = Toploop.set_env_diff_hook () meta_conj_tactic_diff_hook;;

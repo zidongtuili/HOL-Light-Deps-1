@@ -394,4 +394,4 @@ let (meta_diff_hook : (unit,'a list) Toploop.env_diff_hooks) =
        [])
   };;
 
-Toploop.set_env_diff_hook () meta_diff_hook;;
+let restore_hook = Toploop.set_env_diff_hook () meta_diff_hook;;
