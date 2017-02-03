@@ -13,12 +13,16 @@ needs "tactics.ml";;
 (* Accept a theorem modulo unification.                                      *)
 (* ------------------------------------------------------------------------- *)
 
+install_renaming_tactic_boxer ();;
+
 let UNIFY_ACCEPT_TAC mvs th (asl,w) =
   let insts = term_unify mvs (concl th) w in
-  add_rose "UNIFY_ACCEPT_TAC" [th]
+  add_rose null_pid [th]
            (([],insts),[],
             let th' = INSTANTIATE insts th in
             fun i [] -> INSTANTIATE i th');;
+
+Toploop.set_env_diff_hook () meta_conj_tactic_diff_hook;;
 
 (* ------------------------------------------------------------------------- *)
 (* The actual prover, as a tactic.                                           *)

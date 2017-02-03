@@ -120,7 +120,7 @@ module Noack : Acc_map with type k = thm =
 loadt "roses.ml";;
 
 type tac_thm = Tracked_thm of int | Concl of term
-type tac_tree = (string * tac_thm list) list rose_tree
+type tac_tree = (Ident.t * tac_thm list) list rose_tree
 module Tacset = Batset.Make(struct type t = tac_tree let compare = compare end)
 
 module Tracking : (Monad.Monoid with type t = bool * Tacset.t) =
@@ -217,8 +217,6 @@ loadt "tactic_types.ml";; (* Tactics, tacticals and goal stack               *)
 loadt "meta_tactic.ml";;
 
 loadt "tactics.ml";;      (* Tactics, tacticals and goal stack               *)
-loadt "meta_boxed_tactics.ml";;
-loadt "tactic_combinators.ml";;
 
 loadt "meta_conj.ml";;
 

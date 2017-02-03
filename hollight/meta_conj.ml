@@ -53,7 +53,11 @@ let meta_conj_tactic_diff_hook =
                (zip_with_index (rev newly_tracked)) !meta_map
          end
        else if is_tactic vd then
-         rebind_magically ident vd;
+         ident.Ident.name
+         |> Toploop.getvalue
+         |> rebind_magically ident vd (fun thms tac -> BOX_TAC ident thms tac)
+         |> Obj.repr
+         |> Toploop.setvalue ident.Ident.name;
          ignore (register_tactic_ident ident vd);
          ([], []))
   };;
