@@ -123,16 +123,41 @@ type tac_thm = Tracked_thm of int | Concl of term
 type tac_tree = (Ident.t * tac_thm list) list rose_tree
 module Tacset = Batset.Make(struct type t = tac_tree let compare = compare end)
 
-module Tracking : (Monad.Monoid with type t = bool * Tacset.t) =
+module Meta =
   struct
-    type t = bool * Tacset.t
-    let zero () = (false,Tacset.empty)
+    type 'a src =
+      {
+        src_id      : int;
+        src_ident   : Ident.t;
+        src_loc     : Location.t;
+        src_obj     : 'a
+      }
+    type origination = Toplevel | Conjunct of int
+    type 'thm t =
+      {
+        thm_id             : int;
+        thm_src            : unit src;
+        thm_origin         : origination;
+        tracked_deps       : (int * 'thm) list;
+        const_deps         : string list;
+        ty_const_deps      : string list;
+        new_consts         : string list;
+        new_ty_consts      : string list;
+        dep_source_thms    : ((int * 'thm) list * 'thm) src list;
+        dep_source_tactics : (unit src * ((int * 'thm) list * 'thm) src list) list;
+      }
+  end
+
+module Tracking : (Monoid with type 'a t = 'a Meta.t option * Tacset.t) =
+  struct
+    type 'a t = 'a Meta.t option * Tacset.t
+    let zero = (None,Tacset.empty)
     let plus l r =
-      let (is_trackedl,tsl) = l in
-      let (is_trackedr,tsr) = r in
-      false,Tacset.union
-              (if is_trackedl then Tacset.empty else tsl)
-              (if is_trackedr then Tacset.empty else tsr)
+      let (tracked_meta_l,tsl) = l in
+      let (tracked_meta_r,tsr) = r in
+      None,Tacset.union
+             (if Batoption.is_some tracked_meta_l then Tacset.empty else tsl)
+             (if Batoption.is_some tracked_meta_r then Tacset.empty else tsr)
   end
 
 module Setack(H : Hol_kernel) : Acc_map with type k = H.thm =

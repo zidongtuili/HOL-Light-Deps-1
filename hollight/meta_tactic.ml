@@ -39,18 +39,12 @@ type tactic_meta =
     tactic_thms : thm list
   }
 
-let (tactic_src_from_id_map :
-       unit Meta.src Batintmap.t ref) = ref Batintmap.empty;;
-
 (* Registration of tactic identifiers. *)
-let register_tactic_ident, find_tactic_src =
-  let reg, find = mk_src_fns (mk_src ()) in
-  (fun ident vd ->
-   let meta = reg ident vd in
-   tactic_src_from_id_map :=
-     Batintmap.add meta.Meta.src_id meta !tactic_src_from_id_map;
-   meta),
-  find;;
+let register_tactic_ident, find_tactic_src, tactic_srcs =
+  let reg, find_from_ident, tactic_srcs = mk_src_fns (fun src () -> src) in
+  (fun ident vd -> reg ident vd.Types.val_loc ()),
+  find_from_ident,
+  tactic_srcs;;
 
 (* Find tactic rators and return them together with any theorem arguments. *)
 let collect_tactics tree =

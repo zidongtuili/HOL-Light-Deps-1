@@ -35,22 +35,29 @@ let meta_conj_tactic_diff_hook =
                                            |> Toploop.getvalue
                                            |> Obj.obj
                                            |> split_and_reprove in
-           Toploop.setvalue (Ident.name ident) (Obj.repr thm);
            let src = register_thm_ident ident vd (id_thms,thm) in
-           meta_map :=
-             rev_itlist
-               (fun ((id,c),index) ->
-                let thm_type =
-                  if length id_thms = 1
-                  then Meta.Toplevel
-                  else Meta.Conjunct index in
-                let meta =
-                  { meta_of_thm src id thm_type c with
-                    Meta.dep_source_thms = dep_source_thms;
-                    Meta.dep_source_tactics = dep_source_tactics
-                  } in
-                Batintmap.add id (c,meta))
-               (zip_with_index (rev newly_tracked)) !meta_map
+           match id_thms with
+           | [id,thm] ->
+              let meta =
+                {
+                  meta_of_thm src id Meta.Toplevel thm with
+                  Meta.dep_source_thms = dep_source_thms;
+                  Meta.dep_source_tactics = dep_source_tactics
+                } in
+              let thm = modify_meta (fun (_,ts) -> (Some meta,ts)) thm in
+              Toploop.setvalue (Ident.name ident) (Obj.repr thm)
+           | idthms ->
+              let () = Toploop.setvalue (Ident.name ident) (Obj.repr thm) in
+              Batlist.iter
+                (fun ((id,c),index) ->
+                 let meta =
+                   { meta_of_thm src id (Meta.Conjunct index) c with
+                     Meta.dep_source_thms = dep_source_thms;
+                     Meta.dep_source_tactics = dep_source_tactics
+                   } in
+                 let c = modify_meta (fun (_,ts) -> (Some meta,ts)) c in
+                 register_thm c)
+                (zip_with_index (rev newly_tracked))
          end
        else if is_tactic vd then
          ident.Ident.name

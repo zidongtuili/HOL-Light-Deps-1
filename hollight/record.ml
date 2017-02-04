@@ -15,10 +15,17 @@ module type Acc_map =
     val is_subsumed_by : k -> k -> bool
   end
 
+module type Monoid =
+  sig
+    type 'a t
+    val zero : 'a t
+    val plus : 'a t -> 'a t -> 'a t
+  end
+
 module type Recording_hol_kernel =
   functor(Hol_cert : Hol_kernel) ->
   functor(Acc : Acc_map with type k = Hol_cert.thm) ->
-  functor(Mon : Monad.Monoid) ->
+  functor(Mon : Monoid) ->
   sig
     include Hol_kernel with type hol_type = Hol_cert.hol_type
                         and type term = Hol_cert.term
@@ -27,8 +34,8 @@ module type Recording_hol_kernel =
 
     type tracking = Tracked of int | Duplicate of int list
 
-    val get_meta : thm -> Mon.t
-    val modify_meta : (Mon.t -> Mon.t) -> thm -> thm
+    val get_meta : thm -> thm Mon.t
+    val modify_meta : (thm Mon.t -> thm Mon.t) -> thm -> thm
     val get_tracking : dep_info -> tracking
     val get_dep_info : thm -> dep_info option
     val compare_dep_info : dep_info -> dep_info -> int
@@ -52,7 +59,7 @@ module type Recording_hol_kernel =
 module Record_hol_kernel : Recording_hol_kernel =
   functor(Hol_cert : Hol_kernel) ->
   functor(Acc : Acc_map with type k = Hol_cert.thm) ->
-  functor(Mon : Monad.Monoid) ->
+  functor(Mon : Monoid) ->
   struct
     type cert = Hol_cert.thm
 
@@ -76,21 +83,21 @@ module Record_hol_kernel : Recording_hol_kernel =
        and Depset : Batset.S with type elt = Dep.t = Batset.Make(Dep)
        and Thmrec : sig
            type dep_info = Identified of int | Duplicate_of of thm Intmap.t * int
-           and thm = Record of Hol_cert.thm * Depset.t * dep_info option * Mon.t *
-                               Stringset.t * Stringset.t
+            and thm = Record of Hol_cert.thm * Depset.t * dep_info option
+                                * thm Mon.t * Stringset.t * Stringset.t
            type tracking = Tracked of int | Duplicate of int list
            val thm_cert : thm -> Hol_cert.thm
            val compare_dep_info : dep_info -> dep_info -> int
            val get_tracking : dep_info -> tracking
-           val get_meta : thm -> Mon.t
-           val modify_meta : (Mon.t -> Mon.t) -> thm -> thm
+           val get_meta : thm -> thm Mon.t
+           val modify_meta : (thm Mon.t -> thm Mon.t) -> thm -> thm
            val get_dep_info : thm -> dep_info option
            val dep_info_of_id : int -> dep_info
          end =
          struct
            type dep_info = Identified of int | Duplicate_of of thm Intmap.t * int
-            and thm = Record of Hol_cert.thm * Depset.t * dep_info option * Mon.t *
-                                Stringset.t * Stringset.t
+            and thm = Record of Hol_cert.thm * Depset.t * dep_info option
+                                * thm Mon.t * Stringset.t * Stringset.t
            type tracking = Tracked of int | Duplicate of int list
            let thm_cert (Record(cert,_,_,_,_,_)) = cert
            let get_tracking = function
@@ -176,7 +183,7 @@ module Record_hol_kernel : Recording_hol_kernel =
       | None -> Record(cert,deps,None,tag,constdeps,typedeps)
 
     let record0 cert =
-      Record(cert,Depset.empty,None,Mon.zero (),Stringset.empty,Stringset.empty)
+      Record(cert,Depset.empty,None,Mon.zero,Stringset.empty,Stringset.empty)
 
     (* Lift recording over a one argument inference rule. *)
     let record1 rule (Record(cert,deps,dep_info,tag,constdeps,typedeps) as thm) =
@@ -235,7 +242,7 @@ module Record_hol_kernel : Recording_hol_kernel =
         | _ -> failwith "BUG: Not a basic definition." in
       let constdeps = Stringset.singleton cname in
       let typedeps = Stringset.empty in
-      let def = record cert Depset.empty (Mon.zero()) constdeps typedeps in
+      let def = record cert Depset.empty Mon.zero constdeps typedeps in
 
       the_definitions := def :: !the_definitions;
       def
