@@ -45,6 +45,7 @@ let meta_conj_tactic_diff_hook =
                   Meta.dep_source_tactics = dep_source_tactics
                 } in
               let thm = modify_meta (fun (_,ts) -> (Some meta,ts)) thm in
+              register_thm thm;
               Toploop.setvalue (Ident.name ident) (Obj.repr thm)
            | idthms ->
               let () = Toploop.setvalue (Ident.name ident) (Obj.repr thm) in
@@ -60,13 +61,14 @@ let meta_conj_tactic_diff_hook =
                 (zip_with_index (rev newly_tracked))
          end
        else if is_tactic vd then
+         let src = register_tactic_ident ident vd in
          ident.Ident.name
          |> Toploop.getvalue
-         |> rebind_magically ident vd (fun thms tac -> BOX_TAC ident thms tac)
+         |> rebind_magically vd (fun thms tac -> BOX_TAC src thms tac)
          |> Obj.repr
-         |> Toploop.setvalue ident.Ident.name;
-         ignore (register_tactic_ident ident vd);
-         ([], []))
+         |> Toploop.setvalue ident.Ident.name
+       else ();
+       ([], []))
   };;
 
 let restore_hook = Toploop.set_env_diff_hook () meta_conj_tactic_diff_hook;;
