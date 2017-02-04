@@ -112,7 +112,7 @@ let rose_of_thm th =
                           | _ -> None) o get_tracking)
         |> Batoption.default (Concl (concl th)));;
 
-let (add_rose : Ident.t -> thm list
+let (add_rose : unit Meta.src -> thm list
                 -> (term list * instantiation) * goal list * justification
                 -> goalstate) = fun name ths gstate ->
   let inst,gls,j = gstate in
@@ -123,25 +123,31 @@ let (simple_rose : (term list * instantiation) * goal list * justification
   let inst,gls,j = gstate in
   inst,gls,j,rose_split (length gls) [];;
 
-let (BOX_TAC : Ident.t -> thm list -> tactic -> tactic) = fun id ths tac g ->
+let (BOX_TAC : unit Meta.src -> thm list -> tactic -> tactic) = fun src ths tac g ->
   let inst,gls,j,rose_bud = tac g in
   let rose_bud =
     Rose_bud (fun trees -> let Rose(tacs,subtrees),trees = bloom rose_bud trees in
                            let ths = Batlist.filter_map rose_of_thm ths in
-                           Rose(((id,ths) :: tacs), subtrees),trees) in
+                           Rose(((src,ths) :: tacs), subtrees),trees) in
   inst,gls,j,rose_bud;;
 
-let (RENAME_BOX_TAC : Ident.t -> tactic -> tactic) = fun id tac g ->
+let (RENAME_BOX_TAC : unit Meta.src -> tactic -> tactic) = fun src tac g ->
   let inst,gls,j,rose_bud = tac g in
   let rename = function
-    | [] -> [id,[]]
-    | (_,ths) :: tacs -> (id,ths) :: tacs in
+    | [] -> [src,[]]
+    | (_,ths) :: tacs -> (src,ths) :: tacs in
   let rose_bud =
     Rose_bud (fun trees -> let Rose(tacs,subtrees),trees = bloom rose_bud trees in
                            Rose(rename tacs, subtrees),trees) in
   inst,gls,j,rose_bud;;
 
-let null_pid = { Ident.stamp = 0; Ident.name = ""; Ident.flags = 0 };;
+let null_src =
+  {
+    Meta.src_id = 0;
+    Meta.src_ident = Ident.create "";
+    Meta.src_loc = Location.none;
+    Meta.src_obj = ()
+  }
 
 let list_type_path =
   !Toploop.toplevel_env
@@ -160,9 +166,9 @@ to. *)
 (* NOTE: This is dangerously magical -- expect bugs to manifest as segfaults. *)
 (* TODO: Extend magic_extract to extract theorems from more foldable data
 structures. Right now, we only deal with the identity and list foldables. *)
-let (rebind_magically : Ident.t -> Types.value_description
+let (rebind_magically : Types.value_description
                         -> (thm list -> tactic -> tactic)
-                        -> Obj.t -> Obj.t) = fun ident vd box_tac tac ->
+                        -> Obj.t -> Obj.t) = fun vd box_tac tac ->
   let rec magic_ap : 'a 'b 'c. (thm list -> 'a -> 'b) -> Types.type_expr list -> 'c =
     fun f args ->
     match args with
@@ -181,7 +187,7 @@ let (rebind_magically : Ident.t -> Types.value_description
   | None -> tac;;
 
 let (install_tactic_transformer :
-       (Ident.t -> Types.value_description -> Obj.t -> Obj.t)
+       (unit Meta.src -> Types.value_description -> Obj.t -> Obj.t)
        -> unit -> unit) =
   fun box ->
   let hook =
@@ -191,30 +197,29 @@ let (install_tactic_transformer :
         (fun ident vd (dep_source_thms, dep_source_tactics) ->
          meta_diff_hook.env_diff_ident ident vd (dep_source_thms);
          if is_tactic vd then
-           begin
-             ident.Ident.name
-             |> Toploop.getvalue
-             |> box ident vd
-             |> Obj.repr
-             |> Toploop.setvalue ident.Ident.name;
-             ignore (register_tactic_ident ident vd)
-           end;
+           let src = register_tactic_ident ident vd in
+           ident.Ident.name
+           |> Toploop.getvalue
+           |> box src vd
+           |> Obj.repr
+           |> Toploop.setvalue ident.Ident.name
+         else ();
          ([], []))
     } in
   Toploop.set_env_diff_hook () hook;;
 
 let install_renaming_tactic_boxer () =
   install_tactic_transformer
-    (fun ident vd tac ->
-     rebind_magically ident vd
-                      (fun _ tac -> RENAME_BOX_TAC ident tac)
+    (fun src vd tac ->
+     rebind_magically vd
+                      (fun _ tac -> RENAME_BOX_TAC src tac)
                       (Obj.obj tac));;
 
 let install_tactic_boxer () =
   install_tactic_transformer
-    (fun ident vd tac ->
-     rebind_magically ident vd
-                      (fun thms tac -> BOX_TAC ident thms tac)
+    (fun src vd tac ->
+     rebind_magically vd
+                      (fun thms tac -> BOX_TAC src thms tac)
                       (Obj.obj tac));;
 
 let restore_hook = install_renaming_tactic_boxer ();;
@@ -227,7 +232,7 @@ let (ACCEPT_TAC: thm_tactic) =
   let propagate_thm th i [] = INSTANTIATE_ALL i th in
   fun th (asl,w) ->
     if aconv (concl th) w then
-      add_rose null_pid [th] (null_meta,[],propagate_thm th)
+      add_rose null_src [th] (null_meta,[],propagate_thm th)
     else failwith "ACCEPT_TAC";;
 
 (* ------------------------------------------------------------------------- *)
@@ -246,7 +251,7 @@ let (CONV_TAC: conv -> tactic) =
     if not(aconv l w) then failwith "CONV_TAC: bad equation" else
     if r = t_tm then ACCEPT_TAC(EQT_ELIM th) g else
     let th' = SYM th in
-    add_rose null_pid [th]
+    add_rose null_src [th]
              (null_meta,
               [asl,r],
               (fun i [th] -> EQ_MP (INSTANTIATE_ALL i th') th));;
@@ -255,7 +260,7 @@ let (UNDISCH_TAC: term -> tactic) =
  fun tm (asl,w) ->
    try let sthm,asl' = remove (fun (_,asm) -> aconv (concl asm) tm) asl in
        let thm = snd sthm in
-       add_rose null_pid [thm]
+       add_rose null_src [thm]
                 (null_meta,
                  [asl',mk_imp(tm,w)],
                  (fun i [th] -> MP th (INSTANTIATE_ALL i thm)))

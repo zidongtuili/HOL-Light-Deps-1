@@ -168,36 +168,52 @@ module Meta =
             ; "line", int loc.Location.loc_start.Lexing.pos_lnum
             ]
         let fields_of_src of_meta src =
-          []
-          (* let name,loc = src.src_loc in *)
-          (* [ "src_id", int src.src_id *)
-          (* ; "name", string name *)
-          (* ; "location", of_location loc ] *)
-          (* @ of_meta src.src_meta *)
-        let src_id thm_meta = thm_meta.thm_src.src_id
+          [ "src_id", int src.src_id
+          ; "name", string (src.src_ident.Ident.name)
+          ; "location", of_location src.src_loc ]
+          @ of_meta src.src_obj
         let of_tactic_dep (tac,thms) =
           dict
             ["tactic", int tac.src_id
             ;"theorem_arguments", list (int o fun m -> m.src_id) thms ]
+        let src_id thm_meta = thm_meta.thm_src.src_id
         let id_of_meta_src meta =
           fst (src_id meta,meta.thm_src.src_id)
-        let of_id_thm_meta (id,thm,meta) =
+        let of_thm_arg = function
+          | Tracked_thm i -> Some (int i)
+          | Concl tm -> None
+        let of_src_thms (src,thms) =
           dict
-            [ "tracking_id", int id
-            ; "src_id", int (id_of_meta_src meta)
-            ; "as", of_thm_origin meta.thm_origin
-            ; "theorem", of_thm thm
-            ; "stringified", string (string_of_thm thm)
-            ; "constants", list string (tm_consts (concl thm))
-            ; "type_constants", list string (tm_ty_consts (concl thm))
-            ; "new_constants", list string meta.new_consts
-            ; "new_type_constants", list string meta.new_ty_consts
-            ; "tracked_dependencies", list (int o fst) meta.tracked_deps
-            ; "source_code_theorem_dependencies",
-              list (fun meta -> int meta.src_id) meta.dep_source_thms
-            ; "source_code_tactic_dependencies",
-              list of_tactic_dep meta.dep_source_tactics
+            [ "tactic_id", int src.src_id;
+              "thms", list I (Batlist.filter_map of_thm_arg thms)
             ]
+        let rec of_tac_proof (Rose (src_thms, tac_proofs)) =
+          dict
+            [ "tactic", list of_src_thms src_thms;
+              "subproof", list of_tac_proof tac_proofs
+            ]
+        let of_thm_meta thm =
+          let meta,tac_proofs = get_meta thm in
+          Batoption.map
+            (fun meta ->
+             dict
+               [ "tracking_id", int meta.thm_id
+               ; "src_id", int (id_of_meta_src meta)
+               ; "as", of_thm_origin meta.thm_origin
+               ; "theorem", of_thm thm
+               ; "tac_proofs", list of_tac_proof (Tacset.to_list tac_proofs)
+               ; "stringified", string (string_of_thm thm)
+               ; "constants", list string (tm_consts (concl thm))
+               ; "type_constants", list string (tm_ty_consts (concl thm))
+               ; "new_constants", list string meta.new_consts
+               ; "new_type_constants", list string meta.new_ty_consts
+               ; "tracked_dependencies", list (int o fst) meta.tracked_deps
+               ; "source_code_theorem_dependencies",
+                 list (fun meta -> int meta.src_id) meta.dep_source_thms
+               ; "source_code_tactic_dependencies",
+                 list of_tactic_dep meta.dep_source_tactics
+               ])
+            meta
       end
   end
 

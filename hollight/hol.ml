@@ -119,10 +119,6 @@ module Noack : Acc_map with type k = thm =
 
 loadt "roses.ml";;
 
-type tac_thm = Tracked_thm of int | Concl of term
-type tac_tree = (Ident.t * tac_thm list) list rose_tree
-module Tacset = Batset.Make(struct type t = tac_tree let compare = compare end)
-
 module Meta =
   struct
     type 'a src =
@@ -147,6 +143,10 @@ module Meta =
         dep_source_tactics : (unit src * ((int * 'thm) list * 'thm) src list) list;
       }
   end
+
+type tac_thm = Tracked_thm of int | Concl of term
+type tac_tree = (unit Meta.src * tac_thm list) list rose_tree
+module Tacset = Batset.Make(struct type t = tac_tree let compare = compare end)
 
 module Tracking : (Monoid with type 'a t = 'a Meta.t option * Tacset.t) =
   struct
