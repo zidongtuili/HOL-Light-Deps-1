@@ -180,19 +180,19 @@ module Meta =
         let id_of_meta_src meta =
           fst (src_id meta,meta.thm_src.src_id)
         let of_thm_arg = function
-          | Tracked_thm i -> Some (int i)
-          | Concl tm -> None
+          | Tracked_thm i -> int i
+          | Concl tm -> of_tm tm
         let of_src_thms (src,thms) =
           dict
             [ "tactic_id", int src.src_id;
-              "thms", list (option I o of_thm_arg) thms
+              "thms", list of_thm_arg thms
             ]
         let rec of_tac_proof (Rose (src_thms, tac_proofs)) =
           dict
             [ "tactic", list of_src_thms src_thms;
               "subproof", list of_tac_proof tac_proofs
             ]
-        let of_thm_meta thm =
+        let of_thm thm =
           let meta,tac_proofs = get_meta thm in
           Batoption.map
             (fun meta ->
