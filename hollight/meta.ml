@@ -185,7 +185,7 @@ module Meta =
         let of_src_thms (src,thms) =
           dict
             [ "tactic_id", int src.src_id;
-              "thms", list I (Batlist.filter_map of_thm_arg thms)
+              "thms", list (option I o of_thm_arg) thms
             ]
         let rec of_tac_proof (Rose (src_thms, tac_proofs)) =
           dict
