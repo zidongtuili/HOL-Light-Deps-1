@@ -308,19 +308,17 @@ let mk_src_fns of_src =
   let (srcs : 'a Meta.src list ref) = ref [] in
   let src_counter = ref 0 in
   let register_ident ident loc x =
-    match Identmap.Exceptionless.find ident !from_ident_map with
-    | None -> let src_id = !src_counter in
-              incr src_counter;
-              let src = { Meta.src_id = src_id;
-                          Meta.src_ident = ident;
-                          Meta.src_loc = loc;
-                          Meta.src_obj = ()
-                        } in
-              let src_x = of_src src x in
-              from_ident_map := Identmap.add ident src_x !from_ident_map;
-              srcs := src_x :: !srcs;
-              src
-    | Some src_x -> { src_x with Meta.src_obj = () }  in
+    let src_id = !src_counter in
+    incr src_counter;
+    let src = { Meta.src_id = src_id;
+                Meta.src_ident = ident;
+                Meta.src_loc = loc;
+                Meta.src_obj = ()
+              } in
+    let src_x = of_src src x in
+    from_ident_map := Identmap.add ident src_x !from_ident_map;
+    srcs := src_x :: !srcs;
+    src in
   let from_ident ident =
     Identmap.Exceptionless.find ident !from_ident_map in
   let srcs () = rev !srcs in
