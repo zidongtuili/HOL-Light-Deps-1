@@ -52,8 +52,8 @@ module Batmap     = struct
                                          (Keyset.add x) m)
                       BatMap.empty
       |> BatMap.map Keyset.to_list
-    let key_list m = keys m |> Batenum.to_list
-    let to_list m = enum m |> Batenum.to_list
+    let key_list m = keys m |> Batenum.to_list |> Batlist.rev
+    let to_list m = enum m |> Batenum.to_list |> Batlist.rev
   end
 end
 
@@ -64,6 +64,5 @@ module Batscanf   = BatScanf
 module Batio      = BatIO
 module Batunix    = BatUnix
 module Batmarshal = BatMarshal
-module Batenum    = BatEnum
 module Batstring  = BatString
 module type Orderedtype = BatInterfaces.OrderedType
