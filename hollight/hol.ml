@@ -105,174 +105,174 @@ loadt "more-lib.ml";;
 loads "fusion.ml";;
 loadt "record.ml";;
 
-module Noack : Acc_map with type k = thm =
-  struct
-    type k = thm
-    type 'v t = unit
-    let empty = ()
-    let modify _ _ _ () = ()
-    let union _ () () = ()
-    let find _ () = None
-    let filter _ () = ()
-    let is_subsumed_by _ _ = false
-  end;;
+(* module Noack : Acc_map with type k = thm = *)
+(*   struct *)
+(*     type k = thm *)
+(*     type 'v t = unit *)
+(*     let empty = () *)
+(*     let modify _ _ _ () = () *)
+(*     let union _ () () = () *)
+(*     let find _ () = None *)
+(*     let filter _ () = () *)
+(*     let is_subsumed_by _ _ = false *)
+(*   end;; *)
 
-loadt "roses.ml";;
+(* loadt "roses.ml";; *)
 
-module Meta =
-  struct
-    type 'a srced =
-      {
-        src_id      : int;
-        src_ident   : Ident.t;
-        src_loc     : Location.t;
-        src_obj     : 'a
-      }
-  end
+(* module Meta = *)
+(*   struct *)
+(*     type 'a srced = *)
+(*       { *)
+(*         src_id      : int; *)
+(*         src_ident   : Ident.t; *)
+(*         src_loc     : Location.t; *)
+(*         src_obj     : 'a *)
+(*       } *)
+(*   end *)
 
-type tac_thm = Tracked_thm of int | Concl of term
-type tac_tree = (unit Meta.srced * tac_thm list) list rose_tree
-module Tacset = Batset.Make(struct type t = tac_tree let compare = compare end)
+(* type tac_thm = Tracked_thm of int | Concl of term *)
+(* type tac_tree = (unit Meta.srced * tac_thm list) list rose_tree *)
+(* module Tacset = Batset.Make(struct type t = tac_tree let compare = compare end) *)
 
-module Tracking : (Monad.Monoid with type t = bool * Tacset.t) =
-  struct
-    type t = bool * Tacset.t
-    let zero () = (false,Tacset.empty)
-    let plus l r =
-      let (is_tracked_l,tsl) = l in
-      let (is_tracked_r,tsr) = r in
-      false,Tacset.union
-             (if is_tracked_l then Tacset.empty else tsl)
-             (if is_tracked_r then Tacset.empty else tsr)
-  end
+(* module Tracking : (Monad.Monoid with type t = bool * Tacset.t) = *)
+(*   struct *)
+(*     type t = bool * Tacset.t *)
+(*     let zero () = (false,Tacset.empty) *)
+(*     let plus l r = *)
+(*       let (is_tracked_l,tsl) = l in *)
+(*       let (is_tracked_r,tsr) = r in *)
+(*       false,Tacset.union *)
+(*              (if is_tracked_l then Tacset.empty else tsl) *)
+(*              (if is_tracked_r then Tacset.empty else tsr) *)
+(*   end *)
 
-module Setack(H : Hol_kernel) : Acc_map with type k = H.thm =
-  struct
-    type k = H.thm
-    module Acks = Batmap.Make(struct
-                                 type t = H.thm
-                                 let compare thm1 thm2 =
-                                   compare (H.concl thm1) (H.concl thm2)
-                               end)
-    type 'v t = 'v Acks.t
-    let empty = Acks.empty
-    let modify f thm v = Acks.modify_def v thm f
-    let union f =
-      Acks.merge (fun _ xs ys -> match xs,ys with
-                                 | Some xs,Some ys -> Some (f xs ys)
-                                 | None,Some ys -> Some ys
-                                 | Some xs,None -> Some xs
-                                 | None,None -> None)
-    let find = Acks.Exceptionless.find
-    let filter = Acks.filterv
-    let subset xs ys = List.for_all (fun x -> List.mem x ys) xs
-    let is_subsumed_by thm1 thm2 = subset (H.hyp thm2) (H.hyp thm1)
-  end
+(* module Setack(H : Hol_kernel) : Acc_map with type k = H.thm = *)
+(*   struct *)
+(*     type k = H.thm *)
+(*     module Acks = Batmap.Make(struct *)
+(*                                  type t = H.thm *)
+(*                                  let compare thm1 thm2 = *)
+(*                                    compare (H.concl thm1) (H.concl thm2) *)
+(*                                end) *)
+(*     type 'v t = 'v Acks.t *)
+(*     let empty = Acks.empty *)
+(*     let modify f thm v = Acks.modify_def v thm f *)
+(*     let union f = *)
+(*       Acks.merge (fun _ xs ys -> match xs,ys with *)
+(*                                  | Some xs,Some ys -> Some (f xs ys) *)
+(*                                  | None,Some ys -> Some ys *)
+(*                                  | Some xs,None -> Some xs *)
+(*                                  | None,None -> None) *)
+(*     let find = Acks.Exceptionless.find *)
+(*     let filter = Acks.filterv *)
+(*     let subset xs ys = List.for_all (fun x -> List.mem x ys) xs *)
+(*     let is_subsumed_by thm1 thm2 = subset (H.hyp thm2) (H.hyp thm1) *)
+(*   end *)
 
-module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
-  struct
-    type k = H.thm
-    module Acks = Batmap.Make(struct
-                                 type t = H.thm
-                                 let compare thm1 thm2 =
-                                   compare (H.concl thm1) (H.concl thm2)
-                               end)
-    type 'v t = 'v Acks.t
-    let empty = Acks.empty
-    let modify f thm v map =
-      if H.hyp thm = [] then Acks.modify_def v thm f map else map
-    let union f =
-      Acks.merge (fun _ xs ys -> match xs,ys with
-                                 | Some xs,Some ys -> Some (f xs ys)
-                                 | None,Some ys -> Some ys
-                                 | Some xs,None -> Some xs
-                                 | None,None -> None)
-    let find thm map =
-      if H.hyp thm = [] then Acks.Exceptionless.find thm map else None
-    let filter = Acks.filterv
-    let is_subsumed_by thm1 thm2 = H.concl thm1 = H.concl thm2
-  end
+(* module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm = *)
+(*   struct *)
+(*     type k = H.thm *)
+(*     module Acks = Batmap.Make(struct *)
+(*                                  type t = H.thm *)
+(*                                  let compare thm1 thm2 = *)
+(*                                    compare (H.concl thm1) (H.concl thm2) *)
+(*                                end) *)
+(*     type 'v t = 'v Acks.t *)
+(*     let empty = Acks.empty *)
+(*     let modify f thm v map = *)
+(*       if H.hyp thm = [] then Acks.modify_def v thm f map else map *)
+(*     let union f = *)
+(*       Acks.merge (fun _ xs ys -> match xs,ys with *)
+(*                                  | Some xs,Some ys -> Some (f xs ys) *)
+(*                                  | None,Some ys -> Some ys *)
+(*                                  | Some xs,None -> Some xs *)
+(*                                  | None,None -> None) *)
+(*     let find thm map = *)
+(*       if H.hyp thm = [] then Acks.Exceptionless.find thm map else None *)
+(*     let filter = Acks.filterv *)
+(*     let is_subsumed_by thm1 thm2 = H.concl thm1 = H.concl thm2 *)
+(*   end *)
 
-module Hol_cert = Hol;;
-module Hol = Record_hol_kernel(Hol_cert)(Setack_noasm(Hol_cert))(Tracking);;
-include Hol;;
-let compare = Pervasives.compare;;
+(* module Hol_cert = Hol;; *)
+(* module Hol = Record_hol_kernel(Hol_cert)(Setack_noasm(Hol_cert))(Tracking);; *)
+(* include Hol;; *)
+(* let compare = Pervasives.compare;; *)
 
-let equals_thm th th' = dest_thm th = dest_thm th';;
+(* let equals_thm th th' = dest_thm th = dest_thm th';; *)
 
-(* ------------------------------------------------------------------------- *)
-(* Some extra support stuff needed outside the core.                         *)
-(* ------------------------------------------------------------------------- *)
+(* (\* ------------------------------------------------------------------------- *\) *)
+(* (\* Some extra support stuff needed outside the core.                         *\) *)
+(* (\* ------------------------------------------------------------------------- *\) *)
 
-loads "basics.ml";;    (* Additional syntax operations and other utilities  *)
-loads "nets.ml";;      (* Term nets for fast matchability-based lookup      *)
+(* loads "basics.ml";;    (\* Additional syntax operations and other utilities  *\) *)
+(* loads "nets.ml";;      (\* Term nets for fast matchability-based lookup      *\) *)
 
-(* ------------------------------------------------------------------------- *)
-(* The interface.                                                            *)
-(* ------------------------------------------------------------------------- *)
+(* (\* ------------------------------------------------------------------------- *\) *)
+(* (\* The interface.                                                            *\) *)
+(* (\* ------------------------------------------------------------------------- *\) *)
 
-loads "printer.ml";;   (* Crude prettyprinter                               *)
-loads "preterm.ml";;  (* Preterms and their interconversion with terms     *)
-loads "parser.ml";;    (* Lexer and parser                                  *)
+(* loads "printer.ml";;   (\* Crude prettyprinter                               *\) *)
+(* loads "preterm.ml";;  (\* Preterms and their interconversion with terms     *\) *)
+(* loads "parser.ml";;    (\* Lexer and parser                                  *\) *)
 
-loadt "meta.ml";;
+(* loadt "meta.ml";; *)
 
-(* ------------------------------------------------------------------------- *)
-(* Higher level deductive system.                                            *)
-(* ------------------------------------------------------------------------- *)
+(* (\* ------------------------------------------------------------------------- *\) *)
+(* (\* Higher level deductive system.                                            *\) *)
+(* (\* ------------------------------------------------------------------------- *\) *)
 
-loads "equal.ml";;        (* Basic equality reasoning and conversionals      *)
-loads "bool.ml";;         (* Boolean theory and basic derived rules          *)
-loads "drule.ml";;        (* Additional derived rules                        *)
-loadt "tactic_types.ml";; (* Tactics, tacticals and goal stack               *)
-loadt "meta_tactic.ml";;
+(* loads "equal.ml";;        (\* Basic equality reasoning and conversionals      *\) *)
+(* loads "bool.ml";;         (\* Boolean theory and basic derived rules          *\) *)
+(* loads "drule.ml";;        (\* Additional derived rules                        *\) *)
+(* loadt "tactic_types.ml";; (\* Tactics, tacticals and goal stack               *\) *)
+(* loadt "meta_tactic.ml";; *)
 
-loadt "tactics.ml";;      (* Tactics, tacticals and goal stack               *)
+(* loadt "tactics.ml";;      (\* Tactics, tacticals and goal stack               *\) *)
 
-loadt "meta_conj.ml";;
+(* loadt "meta_conj.ml";; *)
 
-loadt "itab.ml";;       (* Toy prover for intuitionistic logic               *)
-loads "simp.ml";;       (* Basic rewriting and simplification tools.         *)
-loads "theorems.ml";;   (* Additional theorems (mainly for quantifiers) etc. *)
-loadt "ind_defs.ml";;   (* Derived rules for inductive definitions           *)
-loads "class.ml";;      (* Classical reasoning: Choice and Extensionality    *)
-loads "trivia.ml";;     (* Some very basic theories, e.g. type ":1"          *)
-loads "canon.ml";;      (* Tools for putting terms in canonical forms        *)
-loads "meson.ml";;      (* First order automation: MESON (model elimination) *)
-loads "metis.ml";;      (* More advanced first-order automation: Metis       *)
-loads "quot.ml";;       (* Derived rules for defining quotient types         *)
-loads "impconv.ml";;    (* More powerful implicational rewriting etc.        *)
+(* loadt "itab.ml";;       (\* Toy prover for intuitionistic logic               *\) *)
+(* loads "simp.ml";;       (\* Basic rewriting and simplification tools.         *\) *)
+(* loads "theorems.ml";;   (\* Additional theorems (mainly for quantifiers) etc. *\) *)
+(* loadt "ind_defs.ml";;   (\* Derived rules for inductive definitions           *\) *)
+(* loads "class.ml";;      (\* Classical reasoning: Choice and Extensionality    *\) *)
+(* loads "trivia.ml";;     (\* Some very basic theories, e.g. type ":1"          *\) *)
+(* loads "canon.ml";;      (\* Tools for putting terms in canonical forms        *\) *)
+(* loads "meson.ml";;      (\* First order automation: MESON (model elimination) *\) *)
+(* loads "metis.ml";;      (\* More advanced first-order automation: Metis       *\) *)
+(* loads "quot.ml";;       (\* Derived rules for defining quotient types         *\) *)
+(* loads "impconv.ml";;    (\* More powerful implicational rewriting etc.        *\) *)
 
-(* ------------------------------------------------------------------------- *)
-(* Mathematical theories and additional proof tools.                         *)
-(* ------------------------------------------------------------------------- *)
+(* (\* ------------------------------------------------------------------------- *\) *)
+(* (\* Mathematical theories and additional proof tools.                         *\) *)
+(* (\* ------------------------------------------------------------------------- *\) *)
 
-loads "pair.ml";;       (* Theory of pairs                                   *)
-loads "nums.ml";;       (* Axiom of Infinity, definition of natural numbers  *)
-loads "recursion.ml";;  (* Tools for primitive recursion on inductive types  *)
-loads "arith.ml";;      (* Natural number arithmetic                         *)
-loads "wf.ml";;         (* Theory of wellfounded relations                   *)
-loads "calc_num.ml";;   (* Calculation with natural numbers                  *)
-loads "normalizer.ml";; (* Polynomial normalizer for rings and semirings     *)
-loads "grobner.ml";;    (* Groebner basis procedure for most semirings.      *)
-loads "ind_types.ml";;  (* Tools for defining inductive types                *)
-loads "lists.ml";;      (* Theory of lists                                   *)
-loads "realax.ml";;     (* Definition of real numbers                        *)
-loads "calc_int.ml";;   (* Calculation with integer-valued reals             *)
-loads "realarith.ml";;  (* Universal linear real decision procedure          *)
-loads "real.ml";;       (* Derived properties of reals                       *)
-loads "calc_rat.ml";;   (* Calculation with rational-valued reals            *)
-loads "int.ml";;        (* Definition of integers                            *)
-loads "sets.ml";;       (* Basic set theory.                                 *)
-loads "iterate.ml";;    (* Iterated operations                               *)
-loads "cart.ml";;       (* Finite Cartesian products                         *)
-loads "define.ml";;     (* Support for general recursive definitions         *)
+(* loads "pair.ml";;       (\* Theory of pairs                                   *\) *)
+(* loads "nums.ml";;       (\* Axiom of Infinity, definition of natural numbers  *\) *)
+(* loads "recursion.ml";;  (\* Tools for primitive recursion on inductive types  *\) *)
+(* loads "arith.ml";;      (\* Natural number arithmetic                         *\) *)
+(* loads "wf.ml";;         (\* Theory of wellfounded relations                   *\) *)
+(* loads "calc_num.ml";;   (\* Calculation with natural numbers                  *\) *)
+(* loads "normalizer.ml";; (\* Polynomial normalizer for rings and semirings     *\) *)
+(* loads "grobner.ml";;    (\* Groebner basis procedure for most semirings.      *\) *)
+(* loads "ind_types.ml";;  (\* Tools for defining inductive types                *\) *)
+(* loads "lists.ml";;      (\* Theory of lists                                   *\) *)
+(* loads "realax.ml";;     (\* Definition of real numbers                        *\) *)
+(* loads "calc_int.ml";;   (\* Calculation with integer-valued reals             *\) *)
+(* loads "realarith.ml";;  (\* Universal linear real decision procedure          *\) *)
+(* loads "real.ml";;       (\* Derived properties of reals                       *\) *)
+(* loads "calc_rat.ml";;   (\* Calculation with rational-valued reals            *\) *)
+(* loads "int.ml";;        (\* Definition of integers                            *\) *)
+(* loads "sets.ml";;       (\* Basic set theory.                                 *\) *)
+(* loads "iterate.ml";;    (\* Iterated operations                               *\) *)
+(* loads "cart.ml";;       (\* Finite Cartesian products                         *\) *)
+(* loads "define.ml";;     (\* Support for general recursive definitions         *\) *)
 
-(* ------------------------------------------------------------------------- *)
-(* The help system. *)
-(* ------------------------------------------------------------------------- *)
+(* (\* ------------------------------------------------------------------------- *\) *)
+(* (\* The help system. *\) *)
+(* (\* ------------------------------------------------------------------------- *\) *)
 
-loads "help.ml";;       (* Online help using the entries in Help directory   *)
-loads "database.ml";;   (* List of name-theorem pairs for search system      *)
+(* loads "help.ml";;       (\* Online help using the entries in Help directory   *\) *)
+(* loads "database.ml";;   (\* List of name-theorem pairs for search system      *\) *)
 
-open Pervasives;;
+(* open Pervasives;; *)

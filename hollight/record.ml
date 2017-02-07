@@ -15,6 +15,17 @@ module type Acc_map =
     val is_subsumed_by : k -> k -> bool
   end
 
+(* Extra metadata can be carried around in theorems, given by a monoid type. The
+functor argument will be applied to a module of the new theorem type, giving some
+basic assumptions about it. *)
+module type Monoid =
+  functor(Thm : sig type thm include Orderedtype with type t := thm end) ->
+  sig
+    type 'a t
+    val zero : Thm.thm t
+    val plus : Thm.thm t -> Thm.thm t -> Thm.thm t
+  end
+
 type tracking = Tracked of int | Duplicate of int list
 
 (** Wrap a HOL kernel inside one which tracks theorems and introduced constants
@@ -24,10 +35,17 @@ type tracking = Tracked of int | Duplicate of int list
 module type Recording_hol_kernel =
   functor(Hol_cert : Hol_kernel) ->
   functor(Acc : Acc_map with type k = Hol_cert.thm) ->
-  functor(Meta : Monad.Monoid) ->
+  functor(Meta : Monoid) ->
   sig
     include Hol_kernel with type hol_type = Hol_cert.hol_type
                         and type term = Hol_cert.term
+
+    module Thm : sig type thm include Orderedtype with type t := thm end
+    module Metathm :
+    sig
+      val zero : Thm.thm Meta(Thm).t
+      val plus : Thm.thm Meta(Thm).t -> Thm.thm Meta(Thm).t -> Thm.thm Meta(Thm).t
+    end
 
     type dep_info
 
@@ -46,8 +64,8 @@ module type Recording_hol_kernel =
     (** Return a version of a theorem that will be tracked as a depedency. *)
     val with_tracking    : thm -> int * thm
 
-    val get_meta         : thm -> Meta.t
-    val modify_meta      : (Meta.t -> Meta.t) -> thm -> thm
+    val get_meta         : thm -> thm Meta(Thm).t
+    val modify_meta      : (thm Meta(Thm).t -> thm Meta(Thm).t) -> thm -> thm
 
     val find_duplicates  : thm -> (int * thm) list
 
@@ -57,7 +75,7 @@ module type Recording_hol_kernel =
 module Record_hol_kernel : Recording_hol_kernel =
   functor(Hol_cert : Hol_kernel) ->
   functor(Acc : Acc_map with type k = Hol_cert.thm) ->
-  functor(Meta : Monad.Monoid) ->
+  functor(Meta : Monoid) ->
   struct
     type cert = Hol_cert.thm
 
@@ -73,16 +91,23 @@ module Record_hol_kernel : Recording_hol_kernel =
                                      let compare = compare
                                    end)
     module rec Dep : BatInterfaces.OrderedType
-           with type t = Thmrec.thm * Thmrec.dep_info =
+           with type t = Thm.thm * Thm.dep_info =
          struct
-           type t = Thmrec.thm * Thmrec.dep_info
-           let compare d1 d2 = Thmrec.compare_dep_info (snd d1) (snd d2)
+           type t = Thm.thm * Thm.dep_info
+           let compare d1 d2 = Thm.compare_dep_info (snd d1) (snd d2)
          end
        and Depset : Batset.S with type elt = Dep.t = Batset.Make(Dep)
-       and Thmrec : sig
+       and Metathm :
+             sig
+               val zero : Thm.thm Meta(Thm).t
+               val plus :
+                 Thm.thm Meta(Thm).t -> Thm.thm Meta(Thm).t -> Thm.thm Meta(Thm).t
+             end = Meta(Thm)
+       and Thm : sig
            type dep_info = Identified of int | Duplicate_of of thm Intmap.t * int
            and thm = Record of Hol_cert.thm * Depset.t * dep_info option *
-                               Stringset.t * Stringset.t * Meta.t
+                               Stringset.t * Stringset.t * thm Metathm.t
+           include Orderedtype with type t := thm
            val thm_cert : thm -> Hol_cert.thm
            val compare_dep_info : dep_info -> dep_info -> int
            val get_tracking : dep_info -> tracking
@@ -92,7 +117,7 @@ module Record_hol_kernel : Recording_hol_kernel =
          struct
            type dep_info = Identified of int | Duplicate_of of thm Intmap.t * int
             and thm = Record of Hol_cert.thm * Depset.t * dep_info option *
-                                Stringset.t * Stringset.t * Meta.t
+                                  Stringset.t * Stringset.t * thm Metathm.t
            let thm_cert (Record(cert,_,_,_,_,_)) = cert
            let get_tracking = function
              | Identified id -> Tracked id
@@ -109,15 +134,15 @@ module Record_hol_kernel : Recording_hol_kernel =
              | Identified _, _ -> -1
              | _, Identified _ -> 1
              | Duplicate_of (_,i1), Duplicate_of (_,i2) -> compare i1 i2
-           let compare_on_tracking thm1 thm2 =
+           let compare thm1 thm2 =
              match thm1,thm2 with
              | Record (cert1,_,Some dinfo1,_,_,_),
                Record (cert2,_,Some dinfo2,_,_,_) ->
-                Some (compare_dep_info dinfo1 dinfo2)
-             | _, _ -> None
+                compare_dep_info dinfo1 dinfo2
+             | _, _ -> compare thm1 thm2
          end
 
-    include Thmrec
+    include Thm
 
     let dest_thm (Record(cert,_,_,_,_,_)) = Hol_cert.dest_thm cert
 
@@ -177,7 +202,7 @@ module Record_hol_kernel : Recording_hol_kernel =
       | None -> Record(cert,deps,None,constdeps,typedeps,meta)
 
     let record0 cert =
-      Record(cert,Depset.empty,None,Stringset.empty,Stringset.empty,Meta.zero ())
+      Record(cert,Depset.empty,None,Stringset.empty,Stringset.empty,Metathm.zero)
 
     (* Lift recording over a one argument inference rule. *)
     let record1 rule (Record(cert,deps,dep_info,constdeps,typedeps,meta) as thm) =
@@ -207,7 +232,7 @@ module Record_hol_kernel : Recording_hol_kernel =
       record cert deps
              (Stringset.union constdeps1 constdeps2)
              (Stringset.union typedeps1 typedeps2)
-             (Meta.plus meta1 meta2)
+             (Metathm.plus meta1 meta2)
 
     let REFL tm = record0 (REFL tm)
     let TRANS = record2 TRANS
@@ -238,7 +263,7 @@ module Record_hol_kernel : Recording_hol_kernel =
         | _ -> failwith "BUG: Not a basic definition." in
       let constdeps = Stringset.singleton cname in
       let typedeps = Stringset.empty in
-      let def = record cert Depset.empty constdeps typedeps (Meta.zero ()) in
+      let def = record cert Depset.empty constdeps typedeps Metathm.zero in
 
       the_definitions := def :: !the_definitions;
       def
