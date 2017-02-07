@@ -35,16 +35,16 @@ let is_tactic d = Batoption.is_some (tactic_antecedents d);;
 
 type tactic_meta =
   {
-    tactic_src  : unit Meta.src;
+    tactic_src  : unit Meta.srced;
     tactic_thms : thm list
   }
 
 (* Registration of tactic identifiers. *)
-let register_tactic_ident, find_tactic_src, tactic_srcs =
-  let reg, find_from_ident, tactic_srcs = mk_src_fns (fun src () -> src) in
-  (fun ident vd -> reg ident vd.Types.val_loc ()),
+let register_tactic_ident, find_tactic_src, all_tactic_srcs  =
+  let reg, find_from_ident, all_tactic_srcs = mk_src_fns () in
+  (fun ident vd -> reg ident vd.Types.val_loc),
   find_from_ident,
-  tactic_srcs;;
+  all_tactic_srcs;;
 
 (* Find tactic rators and return them together with any theorem arguments. *)
 let collect_tactics tree =

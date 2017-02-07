@@ -15,27 +15,22 @@ module type Acc_map =
     val is_subsumed_by : k -> k -> bool
   end
 
-module type Monoid =
-  sig
-    type 'a t
-    val zero : 'a t
-    val plus : 'a t -> 'a t -> 'a t
-  end
+type tracking = Tracked of int | Duplicate of int list
 
+(** Wrap a HOL kernel inside one which tracks theorems and introduced constants
+    through proofs. Duplications of theorems can be automatically identified modulo a
+    subsumption relation provided by Acc. Additional monoidal metadata is attached
+    via Meta. *)
 module type Recording_hol_kernel =
   functor(Hol_cert : Hol_kernel) ->
   functor(Acc : Acc_map with type k = Hol_cert.thm) ->
-  functor(Mon : Monoid) ->
+  functor(Meta : Monad.Monoid) ->
   sig
     include Hol_kernel with type hol_type = Hol_cert.hol_type
                         and type term = Hol_cert.term
 
     type dep_info
 
-    type tracking = Tracked of int | Duplicate of int list
-
-    val get_meta : thm -> thm Mon.t
-    val modify_meta : (thm Mon.t -> thm Mon.t) -> thm -> thm
     val get_tracking : dep_info -> tracking
     val get_dep_info : thm -> dep_info option
     val compare_dep_info : dep_info -> dep_info -> int
@@ -49,7 +44,10 @@ module type Recording_hol_kernel =
     val ty_const_deps    : thm -> string list
 
     (** Return a version of a theorem that will be tracked as a depedency. *)
-    val with_tracking    : thm  -> int * thm
+    val with_tracking    : thm -> int * thm
+
+    val get_meta         : thm -> Meta.t
+    val modify_meta      : (Meta.t -> Meta.t) -> thm -> thm
 
     val find_duplicates  : thm -> (int * thm) list
 
@@ -59,7 +57,7 @@ module type Recording_hol_kernel =
 module Record_hol_kernel : Recording_hol_kernel =
   functor(Hol_cert : Hol_kernel) ->
   functor(Acc : Acc_map with type k = Hol_cert.thm) ->
-  functor(Mon : Monoid) ->
+  functor(Meta : Monad.Monoid) ->
   struct
     type cert = Hol_cert.thm
 
@@ -83,30 +81,23 @@ module Record_hol_kernel : Recording_hol_kernel =
        and Depset : Batset.S with type elt = Dep.t = Batset.Make(Dep)
        and Thmrec : sig
            type dep_info = Identified of int | Duplicate_of of thm Intmap.t * int
-            and thm = Record of Hol_cert.thm * Depset.t * dep_info option
-                                * thm Mon.t * Stringset.t * Stringset.t
-           type tracking = Tracked of int | Duplicate of int list
+           and thm = Record of Hol_cert.thm * Depset.t * dep_info option *
+                               Stringset.t * Stringset.t * Meta.t
            val thm_cert : thm -> Hol_cert.thm
            val compare_dep_info : dep_info -> dep_info -> int
            val get_tracking : dep_info -> tracking
-           val get_meta : thm -> thm Mon.t
-           val modify_meta : (thm Mon.t -> thm Mon.t) -> thm -> thm
            val get_dep_info : thm -> dep_info option
            val dep_info_of_id : int -> dep_info
          end =
          struct
            type dep_info = Identified of int | Duplicate_of of thm Intmap.t * int
-            and thm = Record of Hol_cert.thm * Depset.t * dep_info option
-                                * thm Mon.t * Stringset.t * Stringset.t
-           type tracking = Tracked of int | Duplicate of int list
+            and thm = Record of Hol_cert.thm * Depset.t * dep_info option *
+                                Stringset.t * Stringset.t * Meta.t
            let thm_cert (Record(cert,_,_,_,_,_)) = cert
            let get_tracking = function
              | Identified id -> Tracked id
              | Duplicate_of (ids,_) ->
                 Duplicate (Batenum.fold (fun xs x -> x :: xs) [] (Intmap.keys ids))
-           let get_meta (Record(_,_,_,tag,_,_)) = tag
-           let modify_meta f (Record(thm,deps,dep_info,tag,constdeps,typedeps)) =
-             Record(thm,deps,dep_info,f tag,constdeps,typedeps)
            let get_dep_info (Record(_,_,dep_info,_,_,_)) = dep_info
            let dep_info_of_id id = Identified id
            let is_dep_of id = function
@@ -136,9 +127,9 @@ module Record_hol_kernel : Recording_hol_kernel =
 
     let thm_deps (Record(_,deps,_,_,_,_)) = Depset.to_list deps
 
-    let const_deps (Record (_,_,_,_,deps,_)) = Stringset.to_list deps
+    let const_deps (Record (_,_,_,deps,_,_)) = Stringset.to_list deps
 
-    let ty_const_deps (Record (_,_,_,_,_,deps)) = Stringset.to_list deps
+    let ty_const_deps (Record (_,_,_,_,deps,_)) = Stringset.to_list deps
 
     let get_id = function
       | Record(_,_,Some (Identified n),_,_,_) -> Some n
@@ -147,11 +138,11 @@ module Record_hol_kernel : Recording_hol_kernel =
     let thm_id_counter = ref 0
 
     let (ack_certs : thm Intmap.t Acc.t ref) = ref Acc.empty
-    let with_tracking (Record(cert,deps,_,tag,constdeps,typedeps)) =
+    let with_tracking (Record(cert,deps,_,constdeps,typedeps,meta)) =
       begin
         let id = !thm_id_counter in
         let dep_info = Identified id in
-        let thm = Record(cert,deps,Some dep_info,tag,constdeps,typedeps) in
+        let thm = Record(cert,deps,Some dep_info,constdeps,typedeps,meta) in
         ack_certs := Acc.modify (Intmap.add id thm)
                                 cert
                                 (Intmap.singleton id thm)
@@ -159,6 +150,9 @@ module Record_hol_kernel : Recording_hol_kernel =
         incr thm_id_counter;
         id, thm
       end
+    let get_meta (Record(_,_,_,_,_,meta)) = meta
+    let modify_meta f (Record(cert,deps,dep_info,constdeps,typedeps,meta)) =
+      Record(cert,deps,dep_info,constdeps,typedeps,f meta)
 
     let find_duplicates (Record (cert,_,_,_,_,_)) =
       match Acc.find cert !ack_certs with
@@ -167,7 +161,7 @@ module Record_hol_kernel : Recording_hol_kernel =
       | None -> []
 
     let dup_id_counter = ref 0
-    let record cert deps tag constdeps typedeps =
+    let record cert deps constdeps typedeps meta =
       match Acc.find cert !ack_certs with
       | Some idthms ->
          let dup_id = !dup_id_counter in
@@ -175,29 +169,31 @@ module Record_hol_kernel : Recording_hol_kernel =
            Intmap.filterv (Acc.is_subsumed_by cert o thm_cert) idthms in
          let thm =
            if Intmap.is_empty idthms'
-           then Record(cert,deps,None,tag,constdeps,typedeps)
-           else Record(cert,deps,Some (Duplicate_of (idthms',dup_id)),tag,
-                       constdeps,typedeps) in
+           then Record(cert,deps,None,constdeps,typedeps,meta)
+           else Record(cert,deps,Some (Duplicate_of (idthms',dup_id)),
+                       constdeps,typedeps,meta) in
          incr dup_id_counter;
          thm
-      | None -> Record(cert,deps,None,tag,constdeps,typedeps)
+      | None -> Record(cert,deps,None,constdeps,typedeps,meta)
 
     let record0 cert =
-      Record(cert,Depset.empty,None,Mon.zero,Stringset.empty,Stringset.empty)
+      Record(cert,Depset.empty,None,Stringset.empty,Stringset.empty,Meta.zero ())
 
     (* Lift recording over a one argument inference rule. *)
-    let record1 rule (Record(cert,deps,dep_info,tag,constdeps,typedeps) as thm) =
+    let record1 rule (Record(cert,deps,dep_info,constdeps,typedeps,meta) as thm) =
       let deps = match dep_info with
         | None      -> deps
         | Some info -> Depset.singleton (thm,info) in
       let cert = rule cert in
-      record cert deps tag constdeps typedeps
+      record cert deps constdeps typedeps meta
 
     (* Lift recording over a two argument inference rule which does not delete
        assumptions from the input theorems. *)
     let record2 rule
-                ((Record(cert1,deps1,dep_info1,tag1,constdeps1,typedeps1)) as thm1)
-                ((Record(cert2,deps2,dep_info2,tag2,constdeps2,typedeps2)) as thm2) =
+                ((Record(cert1,deps1,dep_info1,constdeps1,typedeps1,meta1))
+                 as thm1)
+                ((Record(cert2,deps2,dep_info2,constdeps2,typedeps2,meta2))
+                 as thm2) =
       let deps1 =
         match dep_info1 with
         | None      -> deps1
@@ -209,9 +205,9 @@ module Record_hol_kernel : Recording_hol_kernel =
       let deps  = Depset.union deps1 deps2 in
       let cert  = rule cert1 cert2 in
       record cert deps
-             (Mon.plus tag1 tag2)
              (Stringset.union constdeps1 constdeps2)
              (Stringset.union typedeps1 typedeps2)
+             (Meta.plus meta1 meta2)
 
     let REFL tm = record0 (REFL tm)
     let TRANS = record2 TRANS
@@ -242,14 +238,14 @@ module Record_hol_kernel : Recording_hol_kernel =
         | _ -> failwith "BUG: Not a basic definition." in
       let constdeps = Stringset.singleton cname in
       let typedeps = Stringset.empty in
-      let def = record cert Depset.empty Mon.zero constdeps typedeps in
+      let def = record cert Depset.empty constdeps typedeps (Meta.zero ()) in
 
       the_definitions := def :: !the_definitions;
       def
 
     let new_basic_type_definition
-          tyname (abs,rep)
-          ((Record(cert,deps,dep_info,tag,constdeps,typedeps)) as thm) =
+          tyname (abs,rep) ((Record(cert,deps,dep_info,constdeps,typedeps,meta))
+                            as thm) =
       let abs_cert,rep_cert =
         Hol_cert.new_basic_type_definition tyname (abs,rep) cert in
       let deps = match dep_info with
@@ -257,6 +253,6 @@ module Record_hol_kernel : Recording_hol_kernel =
         | Some info -> Depset.singleton (thm,info) in
       let constdeps = Stringset.union (Stringset.of_list [abs;rep]) constdeps in
       let typedeps = Stringset.add tyname typedeps in
-      record abs_cert deps tag constdeps typedeps,
-      record rep_cert deps tag constdeps typedeps
+      record abs_cert deps constdeps typedeps meta,
+      record rep_cert deps constdeps typedeps meta
   end

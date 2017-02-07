@@ -28,7 +28,7 @@ let meta_conj_tactic_diff_hook =
   {
     meta_tactic_diff_hook with
     Toploop.env_diff_ident =
-      (fun ident vd (dep_source_thms, dep_source_tactics) ->
+      (fun ident vd (dep_src_thms, dep_src_tactics) ->
        if is_thm vd then
          begin
            let thm,newly_tracked,id_thms = Ident.name ident
@@ -39,29 +39,21 @@ let meta_conj_tactic_diff_hook =
            match id_thms with
            | [id,thm] ->
               let meta =
-                {
-                  meta_of_thm src id Meta.Toplevel thm with
-                  Meta.dep_source_thms = dep_source_thms;
-                  Meta.dep_source_tactics = dep_source_tactics
-                } in
-              let thm = modify_meta (fun (_,ts) -> (Some meta,ts)) thm in
-              register_thm thm;
+                meta_of_thm id thm src Meta.Toplevel dep_src_thms dep_src_tactics in
+              register_thm_meta thm meta;
               Toploop.setvalue (Ident.name ident) (Obj.repr thm)
            | idthms ->
               let () = Toploop.setvalue (Ident.name ident) (Obj.repr thm) in
               Batlist.iter
                 (fun ((id,c),index) ->
                  let meta =
-                   { meta_of_thm src id (Meta.Conjunct index) c with
-                     Meta.dep_source_thms = dep_source_thms;
-                     Meta.dep_source_tactics = dep_source_tactics
-                   } in
-                 let c = modify_meta (fun (_,ts) -> (Some meta,ts)) c in
-                 register_thm c)
+                   meta_of_thm id c src (Meta.Conjunct index)
+                               dep_src_thms dep_src_tactics in
+                 register_thm_meta c meta)
                 (zip_with_index (rev newly_tracked))
          end
        else if is_tactic vd then
-         let src = register_tactic_ident ident vd in
+         let src = register_tactic_ident ident vd () in
          ident.Ident.name
          |> Toploop.getvalue
          |> rebind_magically vd (fun thms tac -> BOX_TAC src thms tac)

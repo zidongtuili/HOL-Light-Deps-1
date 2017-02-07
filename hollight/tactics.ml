@@ -112,7 +112,7 @@ let rose_of_thm th =
                           | _ -> None) o get_tracking)
         |> Batoption.default (Concl (concl th)));;
 
-let (add_rose : unit Meta.src -> thm list
+let (add_rose : unit Meta.srced -> thm list
                 -> (term list * instantiation) * goal list * justification
                 -> goalstate) = fun name ths gstate ->
   let inst,gls,j = gstate in
@@ -123,7 +123,8 @@ let (simple_rose : (term list * instantiation) * goal list * justification
   let inst,gls,j = gstate in
   inst,gls,j,rose_split (length gls) [];;
 
-let (BOX_TAC : unit Meta.src -> thm list -> tactic -> tactic) = fun src ths tac g ->
+let (BOX_TAC : unit Meta.srced -> thm list -> tactic -> tactic) =
+  fun src ths tac g ->
   let inst,gls,j,rose_bud = tac g in
   let rose_bud =
     Rose_bud (fun trees -> let Rose(tacs,subtrees),trees = bloom rose_bud trees in
@@ -131,7 +132,7 @@ let (BOX_TAC : unit Meta.src -> thm list -> tactic -> tactic) = fun src ths tac 
                            Rose(((src,ths) :: tacs), subtrees),trees) in
   inst,gls,j,rose_bud;;
 
-let (RENAME_BOX_TAC : unit Meta.src -> tactic -> tactic) = fun src tac g ->
+let (RENAME_BOX_TAC : unit Meta.srced -> tactic -> tactic) = fun src tac g ->
   let inst,gls,j,rose_bud = tac g in
   let rename = function
     | [] -> [src,[]]
@@ -187,7 +188,7 @@ let (rebind_magically : Types.value_description
   | None -> tac;;
 
 let (install_tactic_transformer :
-       (unit Meta.src -> Types.value_description -> Obj.t -> Obj.t)
+       (unit Meta.srced -> Types.value_description -> Obj.t -> Obj.t)
        -> unit -> unit) =
   fun box ->
   let hook =
@@ -197,7 +198,7 @@ let (install_tactic_transformer :
         (fun ident vd (dep_source_thms, dep_source_tactics) ->
          meta_diff_hook.env_diff_ident ident vd (dep_source_thms);
          if is_tactic vd then
-           let src = register_tactic_ident ident vd in
+           let src = register_tactic_ident ident vd () in
            ident.Ident.name
            |> Toploop.getvalue
            |> box src vd

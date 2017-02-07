@@ -45,7 +45,7 @@ type justification = instantiation -> thm list -> thm;;
 type goalstate = (term list * instantiation)
                  * goal list
                  * justification
-                 * (unit Meta.src * tac_thm list) list rose_bud;;
+                 * (unit Meta.srced * tac_thm list) list rose_bud;;
 
 (* ------------------------------------------------------------------------- *)
 (* A goalstack is just a list of goalstates. Could go for more...            *)
