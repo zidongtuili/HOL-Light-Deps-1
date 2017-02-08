@@ -17,10 +17,9 @@ let restore_hook = install_renaming_tactic_boxer ();;
 
 let UNIFY_ACCEPT_TAC mvs th (asl,w) =
   let insts = term_unify mvs (concl th) w in
-  add_rose null_src [th]
-           (([],insts),[],
-            let th' = INSTANTIATE insts th in
-            fun i [] -> INSTANTIATE i th');;
+  simple_rose (([],insts),[],
+               let th' = INSTANTIATE insts th in
+               fun i [] -> INSTANTIATE i th');;
 
 restore_hook ();;
 

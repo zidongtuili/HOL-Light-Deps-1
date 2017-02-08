@@ -138,6 +138,7 @@ module Meta =
         thm_src            : unit srced;
         thm_origin         : origination;
         tracked_deps       : (int * thm) list;
+        tac_proofs         : tac_tree list;
         const_deps         : string list;
         ty_const_deps      : string list;
         new_consts         : string list;
@@ -165,8 +166,7 @@ module Meta =
           | Toplevel ->  string "toplevel"
           | Conjunct n ->
              (* Convert the integer to a string for Neo4j. *)
-             pair string (string o string_of_int) ("conjunct",n)
-        let of_ident id =
+             pair string (string o string_of_int) ("conjunct",n)        let of_ident id =
           dict
             [ "name", string id.Ident.name
             ]
@@ -208,13 +208,12 @@ module Meta =
               "subproof", list of_tac_proof tac_proofs
             ]
         let of_thm_meta (thm,meta) =
-          let _,tac_proofs = get_meta thm in
           dict
             [ "tracking_id", int meta.thm_id
             ; "src_id", int (id_of_meta_src meta)
             ; "as", of_thm_origin meta.thm_origin
             ; "theorem", of_thm thm
-            ; "tac_proofs", list of_tac_proof (Tacset.to_list tac_proofs)
+            ; "tac_proofs", list of_tac_proof meta.tac_proofs
             ; "stringified", string (string_of_thm thm)
             ; "constants", list string (tm_consts (concl thm))
             ; "type_constants", list string (tm_ty_consts (concl thm))
@@ -263,6 +262,9 @@ let meta_of_thm id thm src thm_origin dep_source_thms dep_source_tactics =
   let ty_const_subdeps =
     let deps = get_deps thm in
     Batlist.fold_left (fun tys (_,thm) -> union tys (ty_const_deps thm)) [] deps in
+  let tac_proofs =
+    let _,tac_proofs = get_meta thm in
+    Tacset.to_list tac_proofs in
   let new_consts = List.filter (not o C mem const_subdeps) (const_deps thm) in
   let new_ty_consts =
     List.filter (not o C mem ty_const_subdeps) (ty_const_deps thm) in
@@ -279,6 +281,7 @@ let meta_of_thm id thm src thm_origin dep_source_thms dep_source_tactics =
     Meta.thm_src = src;
     Meta.thm_origin = thm_origin;
     Meta.tracked_deps = get_deps thm;
+    Meta.tac_proofs = tac_proofs;
     Meta.const_deps = const_deps thm;
     Meta.ty_const_deps = ty_const_deps thm;
     Meta.new_consts =
@@ -341,28 +344,29 @@ let register_thm_ident, find_thm_src, all_thm_srcs =
   find_from_ident,
   all_thm_srcs;;
 
-(* Add tracking info to a thm, or else return existing tracking info if duplicate. *)
+(* Add tracking info to a thm and return true, or else return existing tracking info
+if duplicate and false. *)
 let with_tracking_nodup thm =
   match Batoption.map get_tracking (get_dep_info thm) with
-  | Some (Tracked id) -> id,thm
+  | Some (Tracked id) -> id,thm,true
   | _ ->
      match get_trivial_duplicates thm with
-     | [] -> with_tracking thm
-     | [idthm] -> idthm
+     | [] -> let id,thm = with_tracking thm in id,thm,true
+     | [idthm] -> let id,thm = idthm in id,thm,false
      | _ -> failwith "Theorem has two duplicates in its dependency graph."
 
 let register_thm_meta, get_thm_metas =
   let (thms : (thm * Meta.t) list ref) = ref [] in
   (fun thm meta -> thms := (thm,meta) :: !thms),
-  fun () -> !thms;;
+  fun () -> rev !thms;;
 
 let (meta_diff_hook : (unit,'a list) Toploop.env_diff_hooks) =
   let register_toplevel_thm ident vd dep_src_thms thm =
     let src = register_thm_ident ident vd ([],thm) in
-    let id,thm = with_tracking_nodup thm in
+    let id,thm,is_new = with_tracking_nodup thm in
     let meta = meta_of_thm id thm src Meta.Toplevel dep_src_thms [] in
     Toploop.setvalue (Ident.name ident) (Obj.repr thm);
-    register_thm_meta thm meta in
+    if is_new then register_thm_meta thm meta in
   let f ident_map ident =
     match find_thm_src ident with
     | Some meta -> Identmap.add ident meta ident_map

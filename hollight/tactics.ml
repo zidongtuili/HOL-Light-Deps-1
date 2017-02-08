@@ -125,18 +125,20 @@ let (simple_rose : (term list * instantiation) * goal list * justification
 
 let (BOX_TAC : unit Meta.srced -> thm list -> tactic -> tactic) =
   fun src ths tac g ->
+  let ths = Batlist.filter_map rose_of_thm ths in
   let inst,gls,j,rose_bud = tac g in
   let rose_bud =
     Rose_bud (fun trees -> let Rose(tacs,subtrees),trees = bloom rose_bud trees in
-                           let ths = Batlist.filter_map rose_of_thm ths in
                            Rose(((src,ths) :: tacs), subtrees),trees) in
   inst,gls,j,rose_bud;;
 
-let (RENAME_BOX_TAC : unit Meta.srced -> tactic -> tactic) = fun src tac g ->
+let (RENAME_BOX_TAC : unit Meta.srced -> thm list -> tactic -> tactic) =
+  fun src ths tac g ->
+  let ths = Batlist.filter_map rose_of_thm ths in
   let inst,gls,j,rose_bud = tac g in
   let rename = function
-    | [] -> [src,[]]
-    | (_,ths) :: tacs -> (src,ths) :: tacs in
+    | [] -> [src,ths]
+    | _ :: tacs -> (src,ths) :: tacs in
   let rose_bud =
     Rose_bud (fun trees -> let Rose(tacs,subtrees),trees = bloom rose_bud trees in
                            Rose(rename tacs, subtrees),trees) in
@@ -213,7 +215,7 @@ let install_renaming_tactic_boxer () =
   install_tactic_transformer
     (fun src vd tac ->
      rebind_magically vd
-                      (fun _ tac -> RENAME_BOX_TAC src tac)
+                      (fun thms tac -> RENAME_BOX_TAC src thms tac)
                       (Obj.obj tac));;
 
 let install_tactic_boxer () =
@@ -223,99 +225,7 @@ let install_tactic_boxer () =
                       (fun thms tac -> BOX_TAC src thms tac)
                       (Obj.obj tac));;
 
-let restore_hook = install_renaming_tactic_boxer ();;
-
-(* ------------------------------------------------------------------------- *)
-(* Basic tactic to use a theorem equal to the goal. Does *no* matching.      *)
-(* ------------------------------------------------------------------------- *)
-
-let (ACCEPT_TAC: thm_tactic) =
-  let propagate_thm th i [] = INSTANTIATE_ALL i th in
-  fun th (asl,w) ->
-    if aconv (concl th) w then
-      add_rose null_src [th] (null_meta,[],propagate_thm th)
-    else failwith "ACCEPT_TAC";;
-
-(* ------------------------------------------------------------------------- *)
-(* Create tactic from a conversion. This allows the conversion to return     *)
-(* |- p rather than |- p = T on a term "p". It also eliminates any goals of  *)
-(* the form "T" automatically.                                               *)
-(* ------------------------------------------------------------------------- *)
-
-let (CONV_TAC: conv -> tactic) =
-  let t_tm = `T` in
-  fun conv ((asl,w) as g) ->
-    let th = conv w in
-    let tm = concl th in
-    if aconv tm w then ACCEPT_TAC th g else
-    let l,r = dest_eq tm in
-    if not(aconv l w) then failwith "CONV_TAC: bad equation" else
-    if r = t_tm then ACCEPT_TAC(EQT_ELIM th) g else
-    let th' = SYM th in
-    add_rose null_src [th]
-             (null_meta,
-              [asl,r],
-              (fun i [th] -> EQ_MP (INSTANTIATE_ALL i th') th));;
-
-let (UNDISCH_TAC: term -> tactic) =
- fun tm (asl,w) ->
-   try let sthm,asl' = remove (fun (_,asm) -> aconv (concl asm) tm) asl in
-       let thm = snd sthm in
-       add_rose null_src [thm]
-                (null_meta,
-                 [asl',mk_imp(tm,w)],
-                 (fun i [th] -> MP th (INSTANTIATE_ALL i thm)))
-   with Failure _ -> failwith "UNDISCH_TAC";;
-
-let (mk_goalstate:goal->goalstate) =
-  fun (asl,w) ->
-    if type_of w = bool_ty then
-      null_meta,
-      [asl,w],
-      (fun inst [th] -> INSTANTIATE_ALL inst th),
-      Rose_bud (fun (rose::roses) -> rose,roses)
-    else failwith "mk_goalstate: Non-boolean goal";;
-
 let restore_hook = install_tactic_boxer ();;
-
-let (by:tactic->refinement) =
-  fun tac ((mvs,inst),gls,just,rosebud) ->
-    if gls = [] then failwith "No goal set" else
-    let g = hd gls
-    and ogls = tl gls in
-    let ((newmvs,newinst),subgls,subjust,subrosebud) = tac g in
-    let n = length subgls in
-    let mvs' = union newmvs mvs
-    and inst' = compose_insts inst newinst
-    and gls' = subgls @ map (inst_goal newinst) ogls in
-    let just' i ths =
-      let i' = compose_insts inst' i in
-      let cths,oths = chop_list n ths in
-      let sths = (subjust i cths) :: oths in
-      just i' sths in
-    let rosebud' = Rose_bud (fun roses -> let rose,roses = bloom subrosebud roses in
-                                          bloom rosebud (rose::roses)) in
-    (mvs',inst'),gls',just',rosebud';;
-
-let (TAC_PROOF : goal * tactic -> thm) =
-  fun (g,tac) ->
-    let gstate = mk_goalstate g in
-    let _,sgs,just,rose_bud = by tac gstate in
-    if sgs = [] then let th = just null_inst [] in
-                     let rose,_ = bloom rose_bud [] in
-                     modify_meta (fun (is_tracked,_) ->
-                                  is_tracked,Tacset.singleton rose) th
-    else failwith "TAC_PROOF: Unsolved goals";;
-
-let (SUBGOAL_THEN: term -> thm_tactic -> tactic) =
-  fun wa ttac (asl,w) ->
-  let meta,gl,just,rosebud = ttac (ASSUME wa) (asl,w) in
-  meta,
-  (asl,wa)::gl,
-  (fun i l -> PROVE_HYP (hd l) (just i (tl l))),
-  Rose_bud (fun rose::roses ->
-            let rose',roses' = bloom rosebud roses in
-            Rose ([],[rose;rose']), roses');;
 
 let ((ORELSE): tactic -> tactic -> tactic) =
   fun tac1 tac2 g ->
@@ -327,7 +237,11 @@ let (FAIL_TAC: string -> tactic) =
 let (NO_TAC: tactic) =
   FAIL_TAC "NO_TAC";;
 
+let restore_hook = install_renaming_tactic_boxer ();;
+
 let (ALL_TAC:tactic) = fun g -> simple_rose (null_meta,[g],(fun _ [th] -> th));;
+
+let restore_hook = install_tactic_boxer ();;
 
 let TRY tac =
   tac ORELSE ALL_TAC;;
@@ -350,7 +264,7 @@ let MAP_FIRST tacf lst =
 let (CHANGED_TAC: tactic -> tactic) =
   fun tac g ->
     let (meta,gl,_,_ as gstate) = tac g in
-    if meta = null_meta & length gl = 1 & equals_goal (hd gl) g
+    if meta = null_meta && length gl = 1 && equals_goal (hd gl) g
     then failwith "CHANGED_TAC" else gstate;;
 
 let rec REPLICATE_TAC n tac =
@@ -393,10 +307,14 @@ let FIRST_TCL ttcll =
 (* just in case.                                                             *)
 (* ------------------------------------------------------------------------- *)
 
+let restore_hook = install_renaming_tactic_boxer ();;
+
 let (LABEL_TAC: string -> thm_tactic) =
   fun s thm (asl,w) ->
   simple_rose (null_meta,[(s,thm)::asl,w],
                (fun i [th] -> PROVE_HYP (INSTANTIATE_ALL i thm) th));;
+
+let restore_hook = install_tactic_boxer ();;
 
 let ASSUME_TAC = LABEL_TAC "";;
 
@@ -469,6 +387,42 @@ let HYP =
     if rest=[] then HYP_LIST tac l else failwith "Invalid using pattern";;
 
 (* ------------------------------------------------------------------------- *)
+(* Basic tactic to use a theorem equal to the goal. Does *no* matching.      *)
+(* ------------------------------------------------------------------------- *)
+
+let restore_hook = install_renaming_tactic_boxer ();;
+
+let (ACCEPT_TAC: thm_tactic) =
+  let propagate_thm th i [] = INSTANTIATE_ALL i th in
+  fun th (asl,w) ->
+    if aconv (concl th) w then
+      simple_rose (null_meta,[],propagate_thm th)
+    else failwith "ACCEPT_TAC";;
+
+(* ------------------------------------------------------------------------- *)
+(* Create tactic from a conversion. This allows the conversion to return     *)
+(* |- p rather than |- p = T on a term "p". It also eliminates any goals of  *)
+(* the form "T" automatically.                                               *)
+(* ------------------------------------------------------------------------- *)
+
+let (CONV_TAC: conv -> tactic) =
+  let t_tm = `T` in
+  fun conv ((asl,w) as g) ->
+    let th = conv w in
+    let tm = concl th in
+    if aconv tm w then ACCEPT_TAC th g else
+    let l,r = dest_eq tm in
+    if not(aconv l w) then failwith "CONV_TAC: bad equation" else
+    if r = t_tm then ACCEPT_TAC(EQT_ELIM th) g else
+    let th' = SYM th in
+    add_rose null_src [th]
+             (null_meta,
+              [asl,r],
+              (fun i [th] -> EQ_MP (INSTANTIATE_ALL i th') th));;
+
+let restore_hook = install_tactic_boxer ();;
+
+(* ------------------------------------------------------------------------- *)
 (* Tactics for equality reasoning.                                           *)
 (* ------------------------------------------------------------------------- *)
 
@@ -476,6 +430,8 @@ let (REFL_TAC: tactic) =
   fun ((asl,w) as g) ->
     try ACCEPT_TAC(REFL(rand w)) g
     with Failure _ -> failwith "REFL_TAC";;
+
+let restore_hook = install_renaming_tactic_boxer ();;
 
 let (ABS_TAC: tactic) =
   fun (asl,w) ->
@@ -499,6 +455,8 @@ let (MK_COMB_TAC: tactic) =
                      [asl,mk_eq(f,g); asl,mk_eq(x,y)],
                      (fun _ [th1;th2] -> MK_COMB(th1,th2)))
     with Failure _ -> failwith "MK_COMB_TAC";;
+
+let restore_hook = install_tactic_boxer ();;
 
 let (AP_TERM_TAC: tactic) =
   let tac = MK_COMB_TAC THENL [REFL_TAC; ALL_TAC] in
@@ -540,6 +498,8 @@ let SUBST_VAR_TAC th =
 (* Basic logical tactics.                                                    *)
 (* ------------------------------------------------------------------------- *)
 
+let restore_hook = install_renaming_tactic_boxer ();;
+
 let (DISCH_TAC: tactic) =
   let f_tm = `F` in
   fun (asl,w) ->
@@ -571,12 +531,23 @@ let (EQ_TAC: tactic) =
                      (fun _ [th1; th2] -> IMP_ANTISYM_RULE th1 th2))
     with Failure _ -> failwith "EQ_TAC";;
 
+let (UNDISCH_TAC: term -> tactic) =
+ fun tm (asl,w) ->
+   try let sthm,asl' = remove (fun (_,asm) -> aconv (concl asm) tm) asl in
+       let thm = snd sthm in
+       add_rose null_src [thm]
+                (null_meta,
+                 [asl',mk_imp(tm,w)],
+                 (fun i [th] -> MP th (INSTANTIATE_ALL i thm)))
+   with Failure _ -> failwith "UNDISCH_TAC";;
+
 let (SPEC_TAC: term * term -> tactic) =
   fun (t,x) (asl,w) ->
   try simple_rose (null_meta,
                    [asl, mk_forall(x,subst[x,t] w)],
                    (fun i [th] -> SPEC (instantiate i t) th))
   with Failure _ -> failwith "SPEC_TAC";;
+
 
 let (X_GEN_TAC: term -> tactic),
     (X_CHOOSE_TAC: term -> thm_tactic),
@@ -621,6 +592,8 @@ let (X_GEN_TAC: term -> tactic),
                  (fun i [th] -> EXISTS (instantiate i w,instantiate i t) th)) in
   X_GEN_TAC,X_CHOOSE_TAC,EXISTS_TAC;;
 
+let restore_hook = install_tactic_boxer ();;
+
 let (GEN_TAC: tactic) =
   fun (asl,w) ->
     try let x = fst(dest_forall w) in
@@ -638,6 +611,8 @@ let (CHOOSE_TAC: thm_tactic) =
           let x' = mk_primed_var avoids x in
           X_CHOOSE_TAC x' xth (asl,w)
       with Failure _ -> failwith "CHOOSE_TAC";;
+
+let restore_hook = install_renaming_tactic_boxer ();;
 
 let (CONJ_TAC: tactic) =
   fun (asl,w) ->
@@ -686,7 +661,8 @@ let (MATCH_ACCEPT_TAC:thm_tactic) =
   let propagate_thm th i [] = INSTANTIATE_ALL i th in
   let rawtac th (asl,w) =
     try let ith = PART_MATCH I th w in
-        simple_rose (null_meta,[],propagate_thm ith)
+        add_rose { null_src with Meta.src_ident = Ident.create "rawtac" } [th]
+                 (null_meta,[],propagate_thm ith)
     with Failure _ -> failwith "ACCEPT_TAC" in
   fun th -> REPEAT GEN_TAC THEN rawtac th;;
 
@@ -711,6 +687,8 @@ let (MATCH_MP_TAC :thm_tactic) =
                                     [asl,lant],
                                     (fun i [th] -> MP (INSTANTIATE_ALL i xth) th))
                    with Failure _ -> failwith "MATCH_MP_TAC: No match";;
+
+let restore_hook = install_tactic_boxer ();;
 
 let (TRANS_TAC:thm->term->tactic) =
   fun th ->
@@ -815,6 +793,16 @@ let FIRST_X_ASSUM ttac =
 (* Subgoaling and freezing variables (latter is especially useful now).      *)
 (* ------------------------------------------------------------------------- *)
 
+let (SUBGOAL_THEN: term -> thm_tactic -> tactic) =
+  fun wa ttac (asl,w) ->
+  let meta,gl,just,rosebud = ttac (ASSUME wa) (asl,w) in
+  meta,
+  (asl,wa)::gl,
+  (fun i l -> PROVE_HYP (hd l) (just i (tl l))),
+  Rose_bud (fun rose::roses ->
+            let rose',roses' = bloom rosebud roses in
+            Rose ([{ null_src with Meta.src_ident = Ident.create "jam" },[]],[rose;rose']), roses');;
+
 let SUBGOAL_TAC s tm prfs =
   match prfs with
    p::ps -> (warn (ps <> []) "SUBGOAL_TAC: additional subproofs ignored";
@@ -830,6 +818,8 @@ let (FREEZE_THEN :thm_tactical) =
 (* Metavariable tactics.                                                     *)
 (* ------------------------------------------------------------------------- *)
 
+let restore_hook = install_renaming_tactic_boxer ();;
+
 let (X_META_EXISTS_TAC: term -> tactic) =
   fun t (asl,w) ->
     try if not (is_var t) then fail() else
@@ -838,17 +828,23 @@ let (X_META_EXISTS_TAC: term -> tactic) =
                      (fun i [th] -> EXISTS (instantiate i w,instantiate i t) th))
     with Failure _ -> failwith "X_META_EXISTS_TAC";;
 
+let restore_hook = install_tactic_boxer ();;
+
 let META_EXISTS_TAC ((asl,w) as gl) =
   let v = fst(dest_exists w) in
   let avoids = itlist (union o frees o concl o snd) asl (frees w) in
   let v' = mk_primed_var avoids v in
   X_META_EXISTS_TAC v' gl;;
 
+let restore_hook = install_renaming_tactic_boxer ();;
+
 let (META_SPEC_TAC: term -> thm -> tactic) =
   fun t thm (asl,w) ->
     let sth = SPEC t thm in
     simple_rose (([t],null_inst),[(("",sth)::asl),w],
                  fun i [th] -> PROVE_HYP (SPEC (instantiate i t) thm) th);;
+
+let restore_hook = install_tactic_boxer ();;
 
 (* ------------------------------------------------------------------------- *)
 (* If all else fails!                                                        *)
@@ -926,6 +922,29 @@ let (print_goalstack:goalstack->unit) =
       print_goalstate p' gs;;
 
 (* ------------------------------------------------------------------------- *)
+(* Convert a tactic into a refinement on head subgoal in current state.      *)
+(* ------------------------------------------------------------------------- *)
+
+let (by:tactic->refinement) =
+  fun tac ((mvs,inst),gls,just,rosebud) ->
+    if gls = [] then failwith "No goal set" else
+    let g = hd gls
+    and ogls = tl gls in
+    let ((newmvs,newinst),subgls,subjust,subrosebud) = tac g in
+    let n = length subgls in
+    let mvs' = union newmvs mvs
+    and inst' = compose_insts inst newinst
+    and gls' = subgls @ map (inst_goal newinst) ogls in
+    let just' i ths =
+      let i' = compose_insts inst' i in
+      let cths,oths = chop_list n ths in
+      let sths = (subjust i cths) :: oths in
+      just i' sths in
+    let rosebud' = Rose_bud (fun roses -> let rose,roses = bloom subrosebud roses in
+                                          bloom rosebud (rose::roses)) in
+    (mvs',inst'),gls',just',rosebud';;
+
+(* ------------------------------------------------------------------------- *)
 (* Rotate the goalstate either way.                                          *)
 (* ------------------------------------------------------------------------- *)
 
@@ -944,6 +963,29 @@ let (rotate:int->refinement) =
     (meta,sgs',just',rotate_bud_n rosebud) in
   fun n -> if n > 0 then funpow n rotate_p
            else funpow (-n) rotate_n;;
+
+(* ------------------------------------------------------------------------- *)
+(* Perform refinement proof, tactic proof etc.                               *)
+(* ------------------------------------------------------------------------- *)
+
+let (mk_goalstate:goal->goalstate) =
+  fun (asl,w) ->
+    if type_of w = bool_ty then
+      null_meta,
+      [asl,w],
+      (fun inst [th] -> INSTANTIATE_ALL inst th),
+      Rose_bud (fun (rose::roses) -> rose,roses)
+    else failwith "mk_goalstate: Non-boolean goal";;
+
+let (TAC_PROOF : goal * tactic -> thm) =
+  fun (g,tac) ->
+    let gstate = mk_goalstate g in
+    let _,sgs,just,rose_bud = by tac gstate in
+    if sgs = [] then let th = just null_inst [] in
+                     let rose,_ = bloom rose_bud [] in
+                     modify_meta (fun (is_tracked,_) ->
+                                  is_tracked,Tacset.singleton rose) th
+    else failwith "TAC_PROOF: Unsolved goals";;
 
 let prove(t,tac) =
   let th = TAC_PROOF(([],t),tac) in
