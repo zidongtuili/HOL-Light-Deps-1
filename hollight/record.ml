@@ -41,10 +41,16 @@ module type Recording_hol_kernel =
                         and type term = Hol_cert.term
 
     module Thm : sig type thm include Orderedtype with type t := thm end
+    module Th :
+    sig
+      type 'a t
+      val zero : Thm.thm t
+      val plus : Thm.thm t -> Thm.thm t -> Thm.thm t
+    end
     module Metathm :
     sig
-      val zero : Thm.thm Meta(Thm).t
-      val plus : Thm.thm Meta(Thm).t -> Thm.thm Meta(Thm).t -> Thm.thm Meta(Thm).t
+      val zero : Thm.thm Th.t
+      val plus : Thm.thm Th.t -> Thm.thm Th.t -> Thm.thm Th.t
     end
 
     type dep_info
@@ -64,8 +70,8 @@ module type Recording_hol_kernel =
     (** Return a version of a theorem that will be tracked as a depedency. *)
     val with_tracking    : thm -> int * thm
 
-    val get_meta         : thm -> thm Meta(Thm).t
-    val modify_meta      : (thm Meta(Thm).t -> thm Meta(Thm).t) -> thm -> thm
+    val get_meta         : thm -> thm Th.t
+    val modify_meta      : (thm Th.t -> thm Th.t) -> thm -> thm
 
     val find_duplicates  : thm -> (int * thm) list
 
@@ -99,14 +105,24 @@ module Record_hol_kernel : Recording_hol_kernel =
        and Depset : Batset.S with type elt = Dep.t = Batset.Make(Dep)
        and Metathm :
              sig
-               val zero : Thm.thm Meta(Thm).t
+               val zero : Thm.thm Th.t
                val plus :
-                 Thm.thm Meta(Thm).t -> Thm.thm Meta(Thm).t -> Thm.thm Meta(Thm).t
+                 Thm.thm Th.t -> Thm.thm Th.t -> Thm.thm Th.t
+             end =
+         struct
+           let zero = Th.zero
+           let plus = Th.plus
+         end
+       and Th :
+             sig
+               type 'a t
+               val zero : Thm.thm t
+               val plus : Thm.thm t -> Thm.thm t -> Thm.thm t
              end = Meta(Thm)
        and Thm : sig
            type dep_info = Identified of int | Duplicate_of of thm Intmap.t * int
            and thm = Record of Hol_cert.thm * Depset.t * dep_info option *
-                               Stringset.t * Stringset.t * thm Metathm.t
+                               Stringset.t * Stringset.t * thm Th.t
            include Orderedtype with type t := thm
            val thm_cert : thm -> Hol_cert.thm
            val compare_dep_info : dep_info -> dep_info -> int
@@ -117,7 +133,7 @@ module Record_hol_kernel : Recording_hol_kernel =
          struct
            type dep_info = Identified of int | Duplicate_of of thm Intmap.t * int
             and thm = Record of Hol_cert.thm * Depset.t * dep_info option *
-                                  Stringset.t * Stringset.t * thm Metathm.t
+                                  Stringset.t * Stringset.t * thm Th.t
            let thm_cert (Record(cert,_,_,_,_,_)) = cert
            let get_tracking = function
              | Identified id -> Tracked id
