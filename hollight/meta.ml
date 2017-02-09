@@ -228,9 +228,6 @@ module Meta =
       end
   end
 
-let (const_def_map : int list Batstringmap.t ref) = ref Batstringmap.empty;;
-let (ty_const_def_map : int list Batstringmap.t ref) = ref Batstringmap.empty;;
-
 (* get_deps will grab the immediate tracked dependencies of its argument.
    get_trivial_duplicates thm will return any tracked theorem that is a duplicate of
    thm and appears in thm's dependency graph.  *)
@@ -268,14 +265,6 @@ let meta_of_thm id thm src thm_origin dep_source_thms dep_source_tactics =
   let new_consts = List.filter (not o C mem const_subdeps) (const_deps thm) in
   let new_ty_consts =
     List.filter (not o C mem ty_const_subdeps) (ty_const_deps thm) in
-  const_def_map :=
-    List.fold_left (fun map c ->
-                    Batstringmap.modify_def [id] c (fun ids -> union [id] ids) map)
-                   !const_def_map new_consts;
-  ty_const_def_map :=
-    List.fold_left (fun map c ->
-                    Batstringmap.modify_def [id] c (fun ids -> union [id] ids) map)
-                   !ty_const_def_map new_ty_consts;
   {
     Meta.thm_id = id;
     Meta.thm_src = src;
