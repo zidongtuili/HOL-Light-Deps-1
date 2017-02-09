@@ -205,7 +205,7 @@ module Meta =
         let rec of_tac_proof (Rose (src_thms, tac_proofs)) =
           dict
             [ "tactic", list of_src_thms src_thms;
-              "subproof", list of_tac_proof tac_proofs
+              "subproofs", list of_tac_proof tac_proofs
             ]
         let of_thm_meta (thm,meta) =
           dict
