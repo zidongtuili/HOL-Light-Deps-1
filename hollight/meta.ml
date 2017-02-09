@@ -327,11 +327,11 @@ let mk_src_fns () =
   register_ident, from_ident, all_srcs;;
 
 (* Registration of thm identifiers. *)
-let register_thm_ident, find_thm_src, all_thm_srcs =
-  let reg, find_from_ident, all_thm_srcs = mk_src_fns () in
+let register_thm_ident, find_thm_src, get_thm_srcs =
+  let reg, find_from_ident, get_thm_srcs = mk_src_fns () in
   (fun ident vd -> reg ident (vd.Types.val_loc)),
   find_from_ident,
-  all_thm_srcs;;
+  get_thm_srcs;;
 
 (* Add tracking info to a thm and return true, or else return existing tracking info
 if duplicate and false. *)

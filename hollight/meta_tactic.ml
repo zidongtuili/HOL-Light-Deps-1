@@ -40,11 +40,11 @@ type tactic_meta =
   }
 
 (* Registration of tactic identifiers. *)
-let register_tactic_ident, find_tactic_src, all_tactic_srcs  =
-  let reg, find_from_ident, all_tactic_srcs = mk_src_fns () in
+let register_tactic_ident, find_tactic_src, get_tactic_srcs  =
+  let reg, find_from_ident, get_tactic_srcs = mk_src_fns () in
   (fun ident vd -> reg ident vd.Types.val_loc),
   find_from_ident,
-  all_tactic_srcs;;
+  get_tactic_srcs;;
 
 (* Find tactic rators and return them together with any theorem arguments. *)
 let collect_tactics tree =
