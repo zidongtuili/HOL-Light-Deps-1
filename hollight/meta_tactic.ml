@@ -55,8 +55,8 @@ let collect_tactics tree =
           include Typedtreeiter.Defaultiteratorargument
           let enter_expression exp = match exp.Typedtree.exp_desc with
             | Typedtree.Texp_apply (f_exp,xs) ->
-               (match f_exp.exp_desc with
-                | Texp_ident (Path.Pident ident,_,_) ->
+               (match f_exp.Typedtree.exp_desc with
+                | Typedtree.Texp_ident (Path.Pident ident,_,_) ->
                    (match find_tactic_src ident with
                     | Some tac_meta ->
                        let f ident_map ident =
@@ -72,9 +72,13 @@ let collect_tactics tree =
                        tacs := (tac_meta, thms) :: !tacs
                     | None -> ())
                 | _ -> ())
+            | Typedtree.Texp_ident (Path.Pident ident,_,_) ->
+               (match find_tactic_src ident with
+                | Some tac_meta -> tacs := (tac_meta, []) :: !tacs
+                | None -> ())
             | _ -> ()
         end) in
-  Find_tactics.iter_structure tree; !tacs
+  Find_tactics.iter_structure tree; !tacs;;
 
 let meta_tactic_diff_hook =
   {
@@ -87,7 +91,7 @@ let meta_tactic_diff_hook =
     Toploop.env_diff_ident =
       (fun ident vd (dep_source_thms, dep_source_tactics) ->
        meta_diff_hook.env_diff_ident ident vd (dep_source_thms);
-       if is_tactic vd then ignore (register_tactic_ident ident vd);
+       if is_tactic vd then ignore (register_tactic_ident ident vd ());
        ([], []))
   };;
 
