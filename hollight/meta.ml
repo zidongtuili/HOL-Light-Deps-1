@@ -353,9 +353,10 @@ let (meta_diff_hook : (unit,'a list) Toploop.env_diff_hooks) =
   let register_toplevel_thm ident vd dep_src_thms thm =
     let src = register_thm_ident ident vd ([],thm) in
     let id,thm,is_new = with_tracking_nodup thm in
-    let meta = meta_of_thm id thm src Meta.Toplevel dep_src_thms [] in
     Toploop.setvalue (Ident.name ident) (Obj.repr thm);
-    if is_new then register_thm_meta thm meta in
+    if is_new then
+      let meta = meta_of_thm id thm src Meta.Toplevel dep_src_thms [] in
+      register_thm_meta thm meta in
   let f ident_map ident =
     match find_thm_src ident with
     | Some meta -> Identmap.add ident meta ident_map
