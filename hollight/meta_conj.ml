@@ -11,8 +11,8 @@ let split_and_reprove thm =
      let conjs = map (with_tracking_nodup) conjs in
      let snd (_,x,_) = x in
      let trivial = map (ACCEPT_TAC o SPECL vs o snd) conjs in
-     TAC_PROOF ((map (fun asm -> ("",ASSUME asm)) asl, c),
-                REPEAT GEN_TAC THEN REPEAT CONJ_TAC THENL trivial),
+     clear_local (TAC_PROOF ((map (fun asm -> ("",ASSUME asm)) asl, c),
+                             REPEAT GEN_TAC THEN REPEAT CONJ_TAC THENL trivial)),
      conjs
 
 let zip_with_index xs =

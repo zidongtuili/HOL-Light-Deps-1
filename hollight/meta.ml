@@ -333,16 +333,63 @@ let register_thm_ident, find_thm_src, get_thm_srcs =
   find_from_ident,
   get_thm_srcs;;
 
+let (minimums : ?cmp:('a -> 'a -> int option) -> ('a list) -> 'a list) =
+  fun ?(cmp=(fun x y -> Some (compare x y))) ->
+  let rec minimums ms = function
+    | [] -> ms
+    | (x::xs) ->
+       let has_smaller = ref false in
+       let ms = filter (fun y -> match cmp x y with
+                                 | None -> true
+                                 | Some c when c < 0 -> false
+                                 | Some c when c > 0 ->
+                                    has_smaller := true;
+                                    true
+                                 | _ ->
+                                    has_smaller := true;
+                                    true) ms in
+       minimums (if not !has_smaller then x::ms else ms) xs in
+  minimums [];;
+
 (* Add tracking info to a thm and return true, or else return existing tracking info
 if duplicate and false. *)
 let with_tracking_nodup thm =
+  (* The theorem might have untracked duplicates in its proof graph. We pick one with
+  one of the smallest tracked sets of dependencies. *)
+  let subset ?(cmp=compare) xs ys =
+    forall (fun x -> (Batlist.exists (fun y -> compare x y = 0)) ys) xs in
+  let cmpset ?(cmp=compare) xs ys =
+    if subset ~cmp:compare xs ys then
+      if subset ~cmp:compare ys xs then Some 0
+      else Some (-1)
+    else if subset ~cmp:compare ys xs then Some 1
+    else None in
+  let cmp_thm thm thm' = if equals_thm thm thm' then 0 else -1 in
+  let equals_thm thm' = dest_thm thm = dest_thm thm' in
+  let cmp thm thm' =
+    let cmp_depinfo (_,depinfo) (_,depinfo') =
+      compare_dep_info depinfo depinfo' in
+    (* Compare by being a most ancestral duplicate and by subset. *)
+    if get_local_duplicates thm = [] then
+      if get_local_duplicates thm' = [] then
+        cmpset ~cmp:cmp_depinfo (thm_deps thm) (thm_deps thm')
+      else Some (-1)
+    else Some 1 in
+  let thm =
+    match minimums ~cmp:cmp (get_local_duplicates thm) with
+    | [] -> thm
+    | [thm] -> thm
+    | thm::_ ->
+       Printf.printf "WARNING: Theorem has more than one recent duplicate in its dependency graph.\n";
+       thm in
+  let thm = clear_local thm in
   match Batoption.map get_tracking (get_dep_info thm) with
   | Some (Tracked id) -> id,thm,true
   | _ ->
      match get_trivial_duplicates thm with
      | [] -> let id,thm = with_tracking thm in id,thm,true
      | [idthm] -> let id,thm = idthm in id,thm,false
-     | _ -> failwith "Theorem has two duplicates in its dependency graph."
+     | _ -> failwith "Theorem has two duplicates in its dependency graph.";;
 
 let register_thm_meta, get_thm_metas =
   let (thms : (thm * Meta.t) list ref) = ref [] in
@@ -363,9 +410,10 @@ let (meta_diff_hook : (unit,'a list) Toploop.env_diff_hooks) =
   {
     (env_diff_default () []) with
     Toploop.env_diff_parse =
-      (fun tree _ _ () -> fold_ident_str f Identmap.empty tree
-                          |> Identmap.to_list
-                          |> map snd);
+      (fun tree _ _ () ->
+       fold_ident_str f Identmap.empty tree
+       |> Identmap.to_list
+       |> map snd);
     Toploop.env_diff_ident =
       (fun ident vd dep_src_thms ->
        if is_thm vd then
@@ -373,7 +421,8 @@ let (meta_diff_hook : (unit,'a list) Toploop.env_diff_hooks) =
            let thm = Obj.obj (Toploop.getvalue (Ident.name ident)) in
            register_toplevel_thm ident vd dep_src_thms thm
          end;
-       [])
+       []);
+    Toploop.env_diff_exit = fun _ -> next_frame ()
   };;
 
 let restore_hook = Toploop.set_env_diff_hook () meta_diff_hook;;

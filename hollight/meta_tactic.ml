@@ -88,7 +88,8 @@ let meta_tactic_diff_hook =
       (fun ident vd (dep_source_thms, dep_source_tactics) ->
        meta_diff_hook.env_diff_ident ident vd (dep_source_thms);
        if is_tactic vd then ignore (register_tactic_ident ident vd);
-       ([], []))
+       ([], []));
+    Toploop.env_diff_exit = fun _ -> next_frame ()
   };;
 
 let restore_hook = Toploop.set_env_diff_hook () meta_tactic_diff_hook;;

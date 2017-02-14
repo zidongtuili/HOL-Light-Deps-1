@@ -115,6 +115,7 @@ module Noack : Acc_map with type k = thm =
     let find _ () = None
     let filter _ () = ()
     let is_subsumed_by _ _ = false
+    let iter f () = ()
   end;;
 
 loadt "roses.ml";;
@@ -167,6 +168,7 @@ module Setack(H : Hol_kernel) : Acc_map with type k = H.thm =
     let filter = Acks.filterv
     let subset xs ys = List.for_all (fun x -> List.mem x ys) xs
     let is_subsumed_by thm1 thm2 = subset (H.hyp thm2) (H.hyp thm1)
+    let iter f = Acks.iter (fun _ -> f)
   end
 
 module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
@@ -191,10 +193,14 @@ module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
       if H.hyp thm = [] then Acks.Exceptionless.find thm map else None
     let filter = Acks.filterv
     let is_subsumed_by thm1 thm2 = H.concl thm1 = H.concl thm2
+    let size size_v m = List.fold_left (fun n x -> n + size_v x) 0
+                                       (Batenum.to_list (Acks.values m))
+    let iter f = Acks.iter (fun _ -> f)
   end
 
 module Hol_cert = Hol;;
-module Hol = Record_hol_kernel(Hol_cert)(Setack_noasm(Hol_cert))(Tracking);;
+module Acc = Setack_noasm(Hol_cert);;
+module Hol = Record_hol_kernel(Hol_cert)(Acc)(Tracking);;
 include Hol;;
 let compare = Pervasives.compare;;
 
