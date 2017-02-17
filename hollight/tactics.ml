@@ -793,6 +793,8 @@ let FIRST_X_ASSUM ttac =
 (* Subgoaling and freezing variables (latter is especially useful now).      *)
 (* ------------------------------------------------------------------------- *)
 
+let restore_hook = install_renaming_tactic_boxer ();;
+
 let (SUBGOAL_THEN: term -> thm_tactic -> tactic) =
   fun wa ttac (asl,w) ->
   let meta,gl,just,rosebud = ttac (ASSUME wa) (asl,w) in
@@ -801,7 +803,9 @@ let (SUBGOAL_THEN: term -> thm_tactic -> tactic) =
   (fun i l -> PROVE_HYP (hd l) (just i (tl l))),
   Rose_bud (fun rose::roses ->
             let rose',roses' = bloom rosebud roses in
-            Rose ([{ null_src with Meta.src_ident = Ident.create "jam" },[]],[rose;rose']), roses');;
+            Rose ([null_src,[]],[rose;rose']), roses');;
+
+let restore_hook = install_tactic_boxer ();;
 
 let SUBGOAL_TAC s tm prfs =
   match prfs with
