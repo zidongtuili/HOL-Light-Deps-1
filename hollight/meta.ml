@@ -221,9 +221,6 @@ module Meta =
         source               : unit srced;
         originates_as        : origination;
         tactic_proofs        : tac_tree list;
-        tracked_dependencies : (int * thm) list;
-        constants            : string list;
-        type_constants       : string list;
         source_code_theorem_dependencies
           : ((int * thm) list * thm) srced list;
         source_code_tactic_dependencies
@@ -270,9 +267,9 @@ module Meta =
             ]
         let fields_of_src src of_meta =
           dict
-            ([ "src_id", int src.source_id
-             ; "src_ident", of_ident src.source_ident
-             ; "src_loc", of_location src.location
+            ([ "source_id", int src.source_id
+             ; "source_ident", of_ident src.source_ident
+             ; "location", of_location src.location
              ]
              @ of_meta src.src_obj)
         let of_tactic_dep (tac,thms) =
@@ -288,7 +285,7 @@ module Meta =
         let of_src_tactic_thms (src_tactic,thms) =
           dict
             [ "tactic_id", int src_tactic.source_id;
-              "thm_args", list of_thm_arg thms
+              "theorem_args", list of_thm_arg thms
             ]
         let rec of_tac_proof (Rose (src_tactic_thms, tac_proofs)) =
           dict
@@ -302,17 +299,17 @@ module Meta =
             ; "theorem", of_thm thm
             ; "stringified", string (string_of_thm thm)
             ; "originates_as", of_thm_origin meta.originates_as
-            ; "tracked_dependencies", list (int o fst) meta.tracked_dependencies
+            ; "tracked_dependencies", list (int o fst) (get_deps thm)
             ; "tactic_proofs", list of_tac_proof meta.tactic_proofs
             ; "constants", list string (tm_consts (concl thm))
             ; "type_constants", list string (tm_ty_consts (concl thm))
+            ; "new_constants", list string (new_consts thm)
+            ; "new_type_constants", list string (new_ty_consts thm)
             ; "source_code_theorem_dependencies",
               list (fun meta -> int meta.source_id)
                    meta.source_code_theorem_dependencies
             ; "source_code_tactic_dependencies",
               list of_tactic_dep meta.source_code_tactic_dependencies
-            ; "new_constants", list string (new_consts thm)
-            ; "new_type_constants", list string (new_ty_consts thm)
             ]
       end
   end
@@ -327,10 +324,7 @@ let meta_of_thm id thm src thm_origin dep_source_thms dep_source_tactics =
     Meta.tracking_id = id;
     Meta.source = src;
     Meta.originates_as = thm_origin;
-    Meta.tracked_dependencies = get_deps thm;
     Meta.tactic_proofs = tac_proofs;
-    Meta.constants = const_deps thm;
-    Meta.type_constants = ty_const_deps thm;
     Meta.source_code_theorem_dependencies = dep_source_thms;
     Meta.source_code_tactic_dependencies = dep_source_tactics
   };;
