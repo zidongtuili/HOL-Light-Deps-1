@@ -202,20 +202,7 @@ module Alpha_acc_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
     module Acks = Batmap.Make(struct
                                  type t = H.thm
                                  let compare thm1 thm2 =
-                                   let tm1 = H.concl thm1 in
-                                   let tm2 = H.concl thm2 in
-                                   let rec drop_forall = function
-                                     | H.Comb(H.Const("!",_),H.Abs(_,body))
-                                       -> drop_forall body
-                                     | tm -> tm in
-                                   let rec abs_all tm = function
-                                     | [] -> tm
-                                     | v::vs -> H.mk_abs(v,abs_all tm vs) in
-                                   let tm1 = drop_forall tm1 in
-                                   let tm2 = drop_forall tm2 in
-                                   let tm1 = abs_all tm1 (H.frees tm1) in
-                                   let tm2 = abs_all tm2 (H.frees tm2) in
-                                   H.alphaorder tm1 tm2
+                                   H.alphaorder (H.concl thm1) (H.concl thm2)
                                end)
     type 'v t = 'v Acks.t
     let empty = Acks.empty
