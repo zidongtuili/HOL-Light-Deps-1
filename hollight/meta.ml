@@ -166,7 +166,8 @@ module Meta =
           | Toplevel ->  string "toplevel"
           | Conjunct n ->
              (* Convert the integer to a string for Neo4j. *)
-             pair string (string o string_of_int) ("conjunct",n)        let of_ident id =
+             pair string (string o string_of_int) ("conjunct",n)
+        let of_ident id =
           dict
             [ "name", string id.Ident.name
             ]
