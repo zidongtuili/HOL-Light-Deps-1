@@ -30,8 +30,8 @@ let all_json () =
   [ "theorem_idents", thm_src_jsons;
     "tactic_idents", tac_src_jsons;
     "tracked_theorems", thm_jsons;
-    "const_definitions", const_jsons;
-    "ty_const_jsons", ty_const_jsons
+    "constant_definitions", const_jsons;
+    "type_constant_definitions", ty_const_jsons
   ];;
 
 let iter_subterm f = function
