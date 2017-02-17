@@ -193,8 +193,6 @@ module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
       if H.hyp thm = [] then Acks.Exceptionless.find thm map else None
     let filter = Acks.filterv
     let is_subsumed_by thm1 thm2 = H.concl thm1 = H.concl thm2
-    let size size_v m = List.fold_left (fun n x -> n + size_v x) 0
-                                       (Batenum.to_list (Acks.values m))
     let iter f = Acks.iter (fun _ -> f)
   end
 
