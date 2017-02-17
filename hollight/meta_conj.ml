@@ -39,7 +39,7 @@ let meta_conj_tactic_diff_hook =
            | [id,thm,is_new] ->
               let meta =
                 meta_of_thm id thm src Meta.Toplevel dep_src_thms dep_src_tactics in
-              Toploop.setvalue (Ident.name ident) (Obj.repr thm);
+              Toploop.setvalue (Ident.name ident) (Obj.repr (clear_local thm));
               if is_new then register_thm_meta thm meta
            | idthms ->
               let () = Toploop.setvalue (Ident.name ident) (Obj.repr thm) in
@@ -48,6 +48,7 @@ let meta_conj_tactic_diff_hook =
                  let meta =
                    meta_of_thm id c src (Meta.Conjunct index)
                                dep_src_thms dep_src_tactics in
+                 let c = clear_local c in
                  if is_new then register_thm_meta c meta)
                 (zip_with_index idthms)
          end
