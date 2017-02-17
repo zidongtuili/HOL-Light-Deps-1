@@ -146,9 +146,9 @@ let (RENAME_BOX_TAC : unit Meta.srced -> thm list -> tactic -> tactic) =
 
 let null_src =
   {
-    Meta.src_id = 0;
-    Meta.src_ident = Ident.create "";
-    Meta.src_loc = Location.none;
+    Meta.source_id = 0;
+    Meta.source_ident = Ident.create "";
+    Meta.location = Location.none;
     Meta.src_obj = ()
   }
 
@@ -661,7 +661,7 @@ let (MATCH_ACCEPT_TAC:thm_tactic) =
   let propagate_thm th i [] = INSTANTIATE_ALL i th in
   let rawtac th (asl,w) =
     try let ith = PART_MATCH I th w in
-        add_rose { null_src with Meta.src_ident = Ident.create "rawtac" } [th]
+        add_rose { null_src with Meta.source_ident = Ident.create "rawtac" } [th]
                  (null_meta,[],propagate_thm ith)
     with Failure _ -> failwith "ACCEPT_TAC" in
   fun th -> REPEAT GEN_TAC THEN rawtac th;;
@@ -793,6 +793,8 @@ let FIRST_X_ASSUM ttac =
 (* Subgoaling and freezing variables (latter is especially useful now).      *)
 (* ------------------------------------------------------------------------- *)
 
+let restore_hook = install_renaming_tactic_boxer ();;
+
 let (SUBGOAL_THEN: term -> thm_tactic -> tactic) =
   fun wa ttac (asl,w) ->
   let meta,gl,just,rosebud = ttac (ASSUME wa) (asl,w) in
@@ -801,7 +803,9 @@ let (SUBGOAL_THEN: term -> thm_tactic -> tactic) =
   (fun i l -> PROVE_HYP (hd l) (just i (tl l))),
   Rose_bud (fun rose::roses ->
             let rose',roses' = bloom rosebud roses in
-            Rose ([{ null_src with Meta.src_ident = Ident.create "jam" },[]],[rose;rose']), roses');;
+            Rose ([null_src,[]],[rose;rose']), roses');;
+
+let restore_hook = install_tactic_boxer ();;
 
 let SUBGOAL_TAC s tm prfs =
   match prfs with

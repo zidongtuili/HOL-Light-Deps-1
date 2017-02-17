@@ -128,23 +128,59 @@ let rec tm_ty_consts = function
      union (ty_consts vty) (tm_ty_consts body)
   | Abs (_,_) -> failwith "BUG: Abstraction must be over a var."
 
+(* get_deps will grab the immediate tracked dependencies of its argument.
+   get_trivial_duplicates thm will return any tracked theorem that is a duplicate of
+   thm and appears in thm's dependency graph.  *)
+let get_deps, get_trivial_duplicates =
+  let (dep_resolve : (thm Batintmap.t * thm Batintmap.t Batintmap.t) Depmap.t ref) =
+    ref Depmap.empty in
+  let get_deps thm =
+    let deps, trans_deps, the_dep_resolve = get_iterated_deps !dep_resolve thm in
+    dep_resolve := the_dep_resolve;
+    match map_option (fun (id,_) -> Batintmap.Exceptionless.find id trans_deps)
+                     (find_duplicates thm) with
+    | [] -> deps |> Batintmap.to_list
+    | [deps] -> deps |> Batintmap.to_list
+    | _ -> failwith "Duplicate has two proofs in the dependency graph." in
+  let get_trivial_duplicates thm =
+    let deps, trans_deps, the_dep_resolve = get_iterated_deps !dep_resolve thm in
+    dep_resolve := the_dep_resolve;
+    filter (fun (id,thm) -> Batintmap.mem id trans_deps or Batintmap.mem id deps)
+           (find_duplicates thm) in
+  get_deps,get_trivial_duplicates
+
+let new_consts thm =
+  let const_subdeps =
+    let deps = get_deps thm in
+    Batlist.fold_left
+      (fun consts (_,thm) -> union consts (const_deps thm)) [] deps in
+  List.filter (not o C List.mem const_subdeps) (const_deps thm);;
+
+let new_ty_consts thm =
+  let ty_const_subdeps =
+    let deps = get_deps thm in
+    Batlist.fold_left (fun tys (_,thm) -> union tys (ty_const_deps thm))
+                      []
+                      deps in
+  List.filter (not o C List.mem ty_const_subdeps) (ty_const_deps thm);;
+
 module Meta =
   struct
     include Meta
     type origination = Toplevel | Conjunct of int
     type t =
       {
-        thm_id             : int;
-        thm_src            : unit srced;
-        thm_origin         : origination;
-        tracked_deps       : (int * thm) list;
-        tac_proofs         : tac_tree list;
-        const_deps         : string list;
-        ty_const_deps      : string list;
-        new_consts         : string list;
-        new_ty_consts      : string list;
-        dep_source_thms    : ((int * thm) list * thm) srced list;
-        dep_source_tactics : (unit srced * ((int * thm) list * thm) srced list) list;
+        tracking_id          : int;
+        source               : unit srced;
+        originates_as        : origination;
+        tactic_proofs        : tac_tree list;
+        tracked_dependencies : (int * thm) list;
+        constants            : string list;
+        type_constants       : string list;
+        source_code_theorem_dependencies
+          : ((int * thm) list * thm) srced list;
+        source_code_tactic_dependencies
+          : (unit srced * ((int * thm) list * thm) srced list) list;
       }
     module Json =
       struct
@@ -178,107 +214,77 @@ module Meta =
           let fname = loc.Location.loc_start.Lexing.pos_fname in
           let fname = tryfind (C strip_prefix fname) [!hol_dir; Sys.getcwd ()] in
           dict
-            [ "filename", string fname
-            ; "line", int loc.Location.loc_start.Lexing.pos_lnum
+            [ "loc_start",
+              dict
+                [ "pos_fname", string fname
+                ; "pos_lnum", int loc.Location.loc_start.Lexing.pos_lnum
+                ]
             ]
         let fields_of_src src of_meta =
           dict
-            ([ "src_id", int src.src_id
-             ; "name", string (src.src_ident.Ident.name)
-             ; "location", of_location src.src_loc ]
+            ([ "src_id", int src.source_id
+             ; "src_ident", of_ident src.source_ident
+             ; "src_loc", of_location src.location
+             ]
              @ of_meta src.src_obj)
         let of_tactic_dep (tac,thms) =
           dict
-            ["tactic", int tac.src_id
-            ;"theorem_arguments", list (int o fun m -> m.src_id) thms ]
-        let src_id thm_meta = thm_meta.thm_src.src_id
+            ["tactic", int tac.source_id
+            ;"theorem_arguments", list (int o fun m -> m.source_id) thms ]
+        let src_id thm_meta = thm_meta.source.source_id
         let id_of_meta_src meta =
-          fst (src_id meta,meta.thm_src.src_id)
+          fst (src_id meta,meta.source.source_id)
         let of_thm_arg = function
           | Tracked_thm i -> int i
           | Concl tm -> of_tm tm
-        let of_src_thms (src,thms) =
+        let of_src_tactic_thms (src_tactic,thms) =
           dict
-            [ "tactic_id", int src.src_id;
-              "thms", list of_thm_arg thms
+            [ "tactic_id", int src_tactic.source_id;
+              "thm_args", list of_thm_arg thms
             ]
-        let rec of_tac_proof (Rose (src_thms, tac_proofs)) =
+        let rec of_tac_proof (Rose (src_tactic_thms, tac_proofs)) =
           dict
-            [ "tactic", list of_src_thms src_thms;
+            [ "tactic", list of_src_tactic_thms src_tactic_thms;
               "subproofs", list of_tac_proof tac_proofs
             ]
         let of_thm_meta (thm,meta) =
           dict
-            [ "tracking_id", int meta.thm_id
-            ; "src_id", int (id_of_meta_src meta)
-            ; "as", of_thm_origin meta.thm_origin
+            [ "tracking_id", int meta.tracking_id
+            ; "source_id", int (id_of_meta_src meta)
             ; "theorem", of_thm thm
-            ; "tac_proofs", list of_tac_proof meta.tac_proofs
             ; "stringified", string (string_of_thm thm)
+            ; "originates_as", of_thm_origin meta.originates_as
+            ; "tracked_dependencies", list (int o fst) meta.tracked_dependencies
+            ; "tactic_proofs", list of_tac_proof meta.tactic_proofs
             ; "constants", list string (tm_consts (concl thm))
             ; "type_constants", list string (tm_ty_consts (concl thm))
-            ; "new_constants", list string meta.new_consts
-            ; "new_type_constants", list string meta.new_ty_consts
-            ; "tracked_dependencies", list (int o fst) meta.tracked_deps
             ; "source_code_theorem_dependencies",
-              list (fun meta -> int meta.src_id) meta.dep_source_thms
+              list (fun meta -> int meta.source_id)
+                   meta.source_code_theorem_dependencies
             ; "source_code_tactic_dependencies",
-              list of_tactic_dep meta.dep_source_tactics
+              list of_tactic_dep meta.source_code_tactic_dependencies
+            ; "new_constants", list string (new_consts thm)
+            ; "new_type_constants", list string (new_ty_consts thm)
             ]
       end
   end
 
-(* get_deps will grab the immediate tracked dependencies of its argument.
-   get_trivial_duplicates thm will return any tracked theorem that is a duplicate of
-   thm and appears in thm's dependency graph.  *)
-let get_deps, get_trivial_duplicates =
-  let (dep_resolve : (thm Batintmap.t * thm Batintmap.t Batintmap.t) Depmap.t ref) =
-    ref Depmap.empty in
-  let get_deps thm =
-    let deps, trans_deps, the_dep_resolve = get_iterated_deps !dep_resolve thm in
-    dep_resolve := the_dep_resolve;
-    match map_option (fun (id,_) -> Batintmap.Exceptionless.find id trans_deps)
-                     (find_duplicates thm) with
-    | [] -> deps |> Batintmap.to_list
-    | [deps] -> deps |> Batintmap.to_list
-    | _ -> failwith "Duplicate has two proofs in the dependency graph." in
-  let get_trivial_duplicates thm =
-    let deps, trans_deps, the_dep_resolve = get_iterated_deps !dep_resolve thm in
-    dep_resolve := the_dep_resolve;
-    filter (fun (id,thm) -> Batintmap.mem id trans_deps or Batintmap.mem id deps)
-           (find_duplicates thm) in
-  get_deps,get_trivial_duplicates
-
 (* Construct meta datastructure of a theorem, source information, origin and
 identifier. *)
 let meta_of_thm id thm src thm_origin dep_source_thms dep_source_tactics =
-  let const_subdeps =
-    let deps = get_deps thm in
-    Batlist.fold_left
-      (fun consts (_,thm) -> union consts (const_deps thm)) [] deps in
-  let ty_const_subdeps =
-    let deps = get_deps thm in
-    Batlist.fold_left (fun tys (_,thm) -> union tys (ty_const_deps thm)) [] deps in
   let tac_proofs =
     let _,tac_proofs = get_meta thm in
     Tacset.to_list tac_proofs in
-  let new_consts = List.filter (not o C mem const_subdeps) (const_deps thm) in
-  let new_ty_consts =
-    List.filter (not o C mem ty_const_subdeps) (ty_const_deps thm) in
   {
-    Meta.thm_id = id;
-    Meta.thm_src = src;
-    Meta.thm_origin = thm_origin;
-    Meta.tracked_deps = get_deps thm;
-    Meta.tac_proofs = tac_proofs;
-    Meta.const_deps = const_deps thm;
-    Meta.ty_const_deps = ty_const_deps thm;
-    Meta.new_consts =
-      List.filter (not o C mem const_subdeps) (const_deps thm);
-    Meta.new_ty_consts =
-      List.filter (not o C mem ty_const_subdeps) (ty_const_deps thm);
-    Meta.dep_source_thms = dep_source_thms;
-    Meta.dep_source_tactics = dep_source_tactics
+    Meta.tracking_id = id;
+    Meta.source = src;
+    Meta.originates_as = thm_origin;
+    Meta.tracked_dependencies = get_deps thm;
+    Meta.tactic_proofs = tac_proofs;
+    Meta.constants = const_deps thm;
+    Meta.type_constants = ty_const_deps thm;
+    Meta.source_code_theorem_dependencies = dep_source_thms;
+    Meta.source_code_tactic_dependencies = dep_source_tactics
   };;
 
 (* Turn iterators into folds. *)
@@ -313,9 +319,9 @@ let mk_src_fns () =
   let register_ident ident loc x =
     let src_id = !src_counter in
     incr src_counter;
-    let src = { Meta.src_id = src_id;
-                Meta.src_ident = ident;
-                Meta.src_loc = loc;
+    let src = { Meta.source_id = src_id;
+                Meta.source_ident = ident;
+                Meta.location = loc;
                 Meta.src_obj = ()
               } in
     let src_x = { src with Meta.src_obj = x } in

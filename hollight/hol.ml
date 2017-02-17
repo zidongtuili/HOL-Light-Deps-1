@@ -123,9 +123,9 @@ module Meta =
   struct
     type 'a srced =
       {
-        src_id      : int;
-        src_ident   : Ident.t;
-        src_loc     : Location.t;
+        source_id    : int;
+        source_ident : Ident.t;
+        location     : Location.t;
         src_obj     : 'a
       }
   end

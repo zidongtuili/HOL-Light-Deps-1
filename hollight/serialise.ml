@@ -13,13 +13,13 @@ let all_json () =
     let add_all meta map =
       List.fold_left
         (fun map c ->
-         Batstringmap.modify_def [meta.Meta.thm_id] c
-                                 (fun ids -> union [meta.Meta.thm_id] ids) map)
+         Batstringmap.modify_def [meta.Meta.tracking_id] c
+                                 (fun ids -> union [meta.Meta.tracking_id] ids) map)
         map in
     List.fold_left
-      (fun (const_defs, const_ty_defs) (_,meta) ->
-       (add_all meta const_defs (meta.Meta.new_consts),
-        add_all meta const_ty_defs (meta.Meta.new_ty_consts)))
+      (fun (const_defs, const_ty_defs) (thm,meta) ->
+       (add_all meta const_defs (new_consts thm),
+        add_all meta const_ty_defs (new_ty_consts thm)))
       (Batstringmap.empty, Batstringmap.empty) all_thm_metas in
   let of_map =
     Ezjsonm.dict
@@ -30,6 +30,6 @@ let all_json () =
   [ "theorem_idents", thm_src_jsons;
     "tactic_idents", tac_src_jsons;
     "tracked_theorems", thm_jsons;
-       "const_definitions", const_jsons;
-       "ty_const_jsons", ty_const_jsons
+    "const_definitions", const_jsons;
+    "ty_const_jsons", ty_const_jsons
   ];;
