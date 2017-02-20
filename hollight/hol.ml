@@ -199,11 +199,20 @@ module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
 module Alpha_acc_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
   struct
     type k = H.thm
-    module Acks = Batmap.Make(struct
-                                 type t = H.thm
-                                 let compare thm1 thm2 =
-                                   H.alphaorder (H.concl thm1) (H.concl thm2)
-                               end)
+    module Cmp =
+      struct
+        type t = H.thm
+        let compare thm1 thm2 =
+          let tm1 = H.concl thm1 in
+          let tm2 = H.concl thm2 in
+          let rec abs_all tm = function
+            | [] -> tm
+            | v::vs -> H.mk_abs(v,abs_all tm vs) in
+          let tm1 = abs_all tm1 (H.frees tm1) in
+          let tm2 = abs_all tm2 (H.frees tm2) in
+          H.alphaorder tm1 tm2
+      end
+    module Acks = Batmap.Make(Cmp)
     type 'v t = 'v Acks.t
     let empty = Acks.empty
     let modify f thm v map =
@@ -217,7 +226,7 @@ module Alpha_acc_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
     let find thm map =
       if H.hyp thm = [] then Acks.Exceptionless.find thm map else None
     let filter = Acks.filterv
-    let is_subsumed_by thm1 thm2 = H.alphaorder (H.concl thm1) (H.concl thm2) = 0
+    let is_subsumed_by thm1 thm2 = Cmp.compare thm1 thm2 = 0
     let iter f = Acks.iter (fun _ -> f)
   end
 
