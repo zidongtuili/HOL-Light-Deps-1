@@ -230,11 +230,11 @@ module Record_hol_kernel : Recording_hol_kernel =
     let add_local_dep thm (frame,deps) =
       if frame = !current_frame then
         if Batoption.is_none thm.thm_dep_info then
-          (frame,ref (Acc.modify I thm.thm_cert [thm] !deps))
+          (frame,ref (Acc.modify ((@) [thm]) thm.thm_cert [thm] !deps))
         else (frame,deps)
       else
         let () = clear_all deps in
-        (!current_frame,ref (Acc.modify I thm.thm_cert [thm] Acc.empty))
+        (!current_frame,ref (Acc.modify ((@) [thm]) thm.thm_cert [thm] Acc.empty))
 
     (* Lift recording over a one argument inference rule. *)
     let record1 rule thm =

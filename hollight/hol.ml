@@ -157,7 +157,9 @@ module Setack(H : Hol_kernel) : Acc_map with type k = H.thm =
                                end)
     type 'v t = 'v Acks.t
     let empty = Acks.empty
-    let modify f thm v = Acks.modify_def v thm f
+    let modify f thm v = Acks.modify_opt thm (function
+                                               | None -> Some v
+                                               | Some x -> Some (f x))
     let union f =
       Acks.merge (fun _ xs ys -> match xs,ys with
                                  | Some xs,Some ys -> Some (f xs ys)
@@ -182,7 +184,12 @@ module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
     type 'v t = 'v Acks.t
     let empty = Acks.empty
     let modify f thm v map =
-      if H.hyp thm = [] then Acks.modify_def v thm f map else map
+      if H.hyp thm = [] then Acks.modify_opt thm
+                                             (function
+                                               | None -> Some v
+                                               | Some x -> Some (f x))
+                                             map
+      else map
     let union f =
       Acks.merge (fun _ xs ys -> match xs,ys with
                                  | Some xs,Some ys -> Some (f xs ys)
@@ -216,7 +223,12 @@ module Alpha_acc_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
     type 'v t = 'v Acks.t
     let empty = Acks.empty
     let modify f thm v map =
-      if H.hyp thm = [] then Acks.modify_def v thm f map else map
+      if H.hyp thm = [] then Acks.modify_opt thm
+                                             (function
+                                               | None -> Some v
+                                               | Some x -> Some (f x))
+                                             map
+      else map
     let union f =
       Acks.merge (fun _ xs ys -> match xs,ys with
                                  | Some xs,Some ys -> Some (f xs ys)
