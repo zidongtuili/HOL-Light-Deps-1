@@ -165,7 +165,7 @@ module Record_hol_kernel : Recording_hol_kernel =
     let next_frame () = incr current_frame
     let clear_local thm = clear_all (snd thm.thm_local_deps); thm
     let get_local_duplicates thm =
-      let frame,deps = thm.thm_local_deps in
+      let _,deps = thm.thm_local_deps in
       Batoption.map_default (filter (Acc.is_subsumed_by thm.thm_cert o thm_cert)) []
                             (Acc.find (thm_cert thm) !deps)
 
