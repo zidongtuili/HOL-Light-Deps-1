@@ -27,7 +27,7 @@ stdenv.mkDerivation rec {
     owner = "Chattered";
     repo = "ocaml";
     rev = "toploop_hook";
-    sha256 = "0nmfhd2aq89vdls0xa9jjlg6zqqbz341p5k7bzl6bm3svbvgkn9h";
+    sha256 = "0m9jlc5n18pkg8wj8ayhp37wnj1gwmy09ylwpb7fcy569dcbm6ya";
   };
 
   prefixKey = "-prefix ";
