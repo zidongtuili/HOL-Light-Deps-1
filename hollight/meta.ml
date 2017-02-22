@@ -4,9 +4,12 @@ needs "more-lib.ml";;
 (* TODO: Find a way to get this inside Acc. Needs kernel and Acc to be mutually
 recursive. *)
 let prove_subsumed_by thm1 thm2 =
-  let fvs1 = frees (concl thm1) in
-  let fvs2 = frees (concl thm2) in
-  INST (zip fvs1 fvs2) thm2;;
+  let c1 = concl thm1 in
+  let c2 = concl thm2 in
+  let fvs1 = frees c1 in
+  let fvs2 = frees c2 in
+  let thm1 = INST (zip fvs1 fvs2) thm2 in
+  EQ_MP (TRANS (REFL (concl thm1)) (REFL c1)) thm1;;
 
 (* Automatically generate contiguous ids as needed by lookup. *)
 module Identifying(Ord: Orderedtype) :
