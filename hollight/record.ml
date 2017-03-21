@@ -37,14 +37,16 @@ module type Recording_hol_kernel =
 
     val dep_info_of_id : int -> dep_info
 
+    val auto_identify : thm list -> unit
+    val set_tracking_hook : (int -> thm -> unit) -> unit
+
     (** The dependencies of a theorem. *)
     val thm_deps         : thm  -> (thm * dep_info) list
 
     val const_deps       : thm -> string list
     val ty_const_deps    : thm -> string list
 
-    (** Return a version of a theorem that will be tracked as a depedency. *)
-    val with_tracking    : thm -> int * thm
+    val with_tracking    : thm -> thm
 
     val get_meta         : thm -> Meta.t
     val modify_meta      : (Meta.t -> Meta.t) -> thm -> thm
@@ -80,7 +82,8 @@ module Record_hol_kernel : Recording_hol_kernel =
          end
        and Depset : Batset.S with type elt = Dep.t = Batset.Make(Dep)
        and Thmrec : sig
-           type dep_info = Identified of int | Duplicate_of of thm Intmap.t * int
+           type dep_info = Identified of int
+                         | Duplicate_of of thm Intmap.t * int
            and thm = Record of Hol_cert.thm * Depset.t * dep_info option *
                                Stringset.t * Stringset.t * Meta.t
            val thm_cert : thm -> Hol_cert.thm
@@ -135,6 +138,15 @@ module Record_hol_kernel : Recording_hol_kernel =
       | Record(_,_,Some (Identified n),_,_,_) -> Some n
       | _ -> None
 
+    let (autos : unit Acc.t ref) = ref Acc.empty
+    let tracking_hook = ref (fun _ _ -> ())
+    let set_tracking_hook f = tracking_hook := f
+    let auto_identify thms =
+      autos := List.fold_left
+                 (fun acc thm -> Acc.modify (fun () -> ()) (thm_cert thm) () acc)
+                 Acc.empty
+                 thms
+
     let thm_id_counter = ref 0
 
     let (ack_certs : thm Intmap.t Acc.t ref) = ref Acc.empty
@@ -148,7 +160,8 @@ module Record_hol_kernel : Recording_hol_kernel =
                                 (Intmap.singleton id thm)
                                 !ack_certs;
         incr thm_id_counter;
-        id, thm
+        !tracking_hook id thm;
+        thm
       end
     let get_meta (Record(_,_,_,_,_,meta)) = meta
     let modify_meta f (Record(cert,deps,dep_info,constdeps,typedeps,meta)) =
@@ -174,7 +187,11 @@ module Record_hol_kernel : Recording_hol_kernel =
                        constdeps,typedeps,meta) in
          incr dup_id_counter;
          thm
-      | None -> Record(cert,deps,None,constdeps,typedeps,meta)
+      | None ->
+         let thm = Record(cert,deps,None,constdeps,typedeps,meta) in
+         match Acc.find cert !autos with
+         | Some () -> with_tracking thm
+         | None -> thm
 
     let record0 cert =
       Record(cert,Depset.empty,None,Stringset.empty,Stringset.empty,Meta.zero ())
