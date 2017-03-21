@@ -2,7 +2,7 @@ let
   safeX11 = stdenv: !(stdenv.isArm || stdenv.isMips);
 in
 
-{ stdenv, fetchFromGitHub, ncurses, buildEnv, libX11, xproto,
+{ stdenv, fetchgit, fetchFromGitHub, ncurses, buildEnv, libX11, xproto,
   useX11 ? safeX11 stdenv }:
 
 if useX11 && !(safeX11 stdenv)
@@ -26,8 +26,8 @@ stdenv.mkDerivation rec {
   src = fetchFromGitHub {
     owner = "Chattered";
     repo = "ocaml";
-    rev = "7d0010225383af9ad3122bff1f6ec028cf750f27";
-    sha256 = "0m9jlc5n18pkg8wj8ayhp37wnj1gwmy09ylwpb7fcy569dcbm6ya";
+    rev = "transformer";
+    sha256 = "0lk96r75iiibxqc4sm152jhinrsvr3jq5726wl6548hwrb3nx59g";
   };
 
   prefixKey = "-prefix ";
