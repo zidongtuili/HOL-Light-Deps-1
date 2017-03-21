@@ -28,7 +28,7 @@ and get_constr_of_desc = function
   | Types.Tlink t -> get_constr t
   | Types.Tsubst t -> get_constr t
   | _ -> None;;
-let bar = ref [];;
+
 let rec transform_item setup_id =
   let module T = Typedtree in
   let module Ty = Types in
