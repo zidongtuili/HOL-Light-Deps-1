@@ -33,7 +33,6 @@ let rec transform_item setup_id rec_flag bnds env =
   let module T = Typedtree in
   let module Ty = Types in
   let module L = Longident in
-  let noloc = Location.mknoloc "" in
   let anon_pat desc ty =
     {
       T.pat_desc = desc;
@@ -56,6 +55,37 @@ let rec transform_item setup_id rec_flag bnds env =
       Ty.level = -1; (* TODO: Double check *)
       Ty.id = -1 (* TODO: Double check *)
     } in
+  let noloc = Location.mknoloc "" in
+  let cunit =
+    Env.lookup_constructor (Longident.Lident "()") !Toploop.toplevel_env in
+  let cnil =
+    Env.lookup_constructor (Longident.Lident "[]") !Toploop.toplevel_env in
+  let ccons =
+    Env.lookup_constructor (Longident.Lident "::") !Toploop.toplevel_env in
+  let punit,_ = Env.lookup_type (Longident.Lident "unit") !Toploop.toplevel_env in
+  let plist,_ = Env.lookup_type (Longident.Lident "list") !Toploop.toplevel_env in
+  let unit_ty = Types.Tconstr (punit,[],ref Types.Mnil) in
+  let exn_ty =
+    let p = !Toploop.toplevel_env
+            |> Env.lookup_type (Longident.Lident "exn")
+            |> fst in
+    Ty.Tconstr (p,[],ref Ty.Mnil) in
+  let unit_loc = Location.mknoloc (Longident.Lident "unit") in
+  let unit_pat =
+    anon_pat (T.Tpat_construct (unit_loc,
+                                cunit,
+                                [],
+                                true))
+             (anon_ty unit_ty) in
+  let exn_pat = anon_pat T.Tpat_any (anon_ty exn_ty) in
+  let nil_exp =
+    anon_exp (Typedtree.Texp_construct (Location.mknoloc (Longident.Lident "[]"),
+                                        cnil,
+                                        [],
+                                        false))
+             (anon_ty (Types.Tconstr (plist,[setup_arg_ty],ref Types.Mnil))) in
+  let unit_exp = anon_exp (T.Texp_construct (unit_loc,cunit,[],true))
+                          (anon_ty unit_ty) in
   let setup_fun_desc, setup_arg_ty =
     let setup_path,setup_vd =
       Env.lookup_value (Longident.Lident setup_id) !Toploop.toplevel_env in
@@ -78,21 +108,6 @@ let rec transform_item setup_id rec_flag bnds env =
       | Ty.Tconstr (_,[ty],_) -> ty in
     setup_fun,get_arg_ty setup_ty in
   let setup_arg_constr = get_constr setup_arg_ty in
-  let cunit =
-    Env.lookup_constructor (Longident.Lident "()") !Toploop.toplevel_env in
-  let cnil =
-    Env.lookup_constructor (Longident.Lident "[]") !Toploop.toplevel_env in
-  let ccons =
-    Env.lookup_constructor (Longident.Lident "::") !Toploop.toplevel_env in
-  let plist,_ = Env.lookup_type (Longident.Lident "list") !Toploop.toplevel_env in
-  let punit,_ = Env.lookup_type (Longident.Lident "unit") !Toploop.toplevel_env in
-  let unit_ty = Types.Tconstr (punit,[],ref Types.Mnil) in
-  let nil =
-    anon_exp (Typedtree.Texp_construct (Location.mknoloc (Longident.Lident "[]"),
-                                        cnil,
-                                        [],
-                                        false))
-             (anon_ty (Types.Tconstr (plist,[setup_arg_ty],ref Types.Mnil))) in
   let list_ty = anon_ty (Types.Tconstr (plist,[setup_arg_ty],ref Types.Mnil)) in
   let mk_cons exp exps =
     anon_exp (Typedtree.Texp_construct (Location.mknoloc (Longident.Lident "::"),
@@ -100,22 +115,7 @@ let rec transform_item setup_id rec_flag bnds env =
                                         [exp;exps],
                                         false))
              list_ty in
-  let mk_list args = List.fold_right mk_cons args nil in
-  let exn_ty =
-    let p = !Toploop.toplevel_env
-            |> Env.lookup_type (Longident.Lident "exn")
-            |> fst in
-    Ty.Tconstr (p,[],ref Ty.Mnil) in
-  let unit_loc = Location.mknoloc (Longident.Lident "unit") in
-  let unit_pat =
-    anon_pat (T.Tpat_construct (unit_loc,
-                                cunit,
-                                [],
-                                true))
-             (anon_ty unit_ty) in
-  let exn_pat = anon_pat T.Tpat_any (anon_ty exn_ty) in
-  let unit_exp = anon_exp (T.Texp_construct (unit_loc,cunit,[],true))
-                          (anon_ty unit_ty) in
+  let mk_list args = List.fold_right mk_cons args nil_exp in
   let item_desc = T.Tstr_value (rec_flag,bnds) in
   let item =
     {
