@@ -127,7 +127,6 @@ let rec transform_item setup_id rec_flag bnds env =
   let get_pat_exp id =
     let newid = Ident.rename id in
     let p = Path.Pident id in
-    let newp = Path.Pident newid in
     let vd = Env.find_value p env in
     let ty = vd.Ty.val_type in
     let lid = Location.mknoloc (Longident.Lident (id.Ident.name)) in
@@ -168,8 +167,8 @@ let rec transform_item setup_id rec_flag bnds env =
       } in
     anon_exp
       (T.Texp_let (Asttypes.Nonrecursive,
-                   [anon_pat (Tpat_var (retry_ident,noloc)) ty,
-                    anon_exp (Texp_function ("",[unit_pat,retry_body],T.Total))
+                   [anon_pat (T.Tpat_var (retry_ident,noloc)) ty,
+                    anon_exp (T.Texp_function ("",[unit_pat,retry_body],T.Total))
                              tuple_ty],
                    rest (anon_exp (T.Texp_ident (Path.Pident retry_ident,
                                                  retry_loc,
