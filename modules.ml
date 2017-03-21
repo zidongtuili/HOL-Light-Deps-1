@@ -78,12 +78,6 @@ let rec transform_item setup_id rec_flag bnds env =
                                 true))
              (anon_ty unit_ty) in
   let exn_pat = anon_pat T.Tpat_any (anon_ty exn_ty) in
-  let nil_exp =
-    anon_exp (Typedtree.Texp_construct (Location.mknoloc (Longident.Lident "[]"),
-                                        cnil,
-                                        [],
-                                        false))
-             (anon_ty (Types.Tconstr (plist,[setup_arg_ty],ref Types.Mnil))) in
   let unit_exp = anon_exp (T.Texp_construct (unit_loc,cunit,[],true))
                           (anon_ty unit_ty) in
   let setup_fun_desc, setup_arg_ty =
@@ -108,6 +102,12 @@ let rec transform_item setup_id rec_flag bnds env =
       | Ty.Tconstr (_,[ty],_) -> ty in
     setup_fun,get_arg_ty setup_ty in
   let setup_arg_constr = get_constr setup_arg_ty in
+  let nil_exp =
+    anon_exp (Typedtree.Texp_construct (Location.mknoloc (Longident.Lident "[]"),
+                                        cnil,
+                                        [],
+                                        false))
+             (anon_ty (Types.Tconstr (plist,[setup_arg_ty],ref Types.Mnil))) in
   let list_ty = anon_ty (Types.Tconstr (plist,[setup_arg_ty],ref Types.Mnil)) in
   let mk_cons exp exps =
     anon_exp (Typedtree.Texp_construct (Location.mknoloc (Longident.Lident "::"),
