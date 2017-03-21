@@ -31,6 +31,7 @@ stdenv.mkDerivation rec {
   };
 
   prefixKey = "-prefix ";
+  patches = [ ./fix-clang-build-on-osx.diff ];
   configureFlags = ["-no-tk"] ++ optionals useX11 [ "-x11lib" x11lib
                                                     "-x11include" x11inc ];
 
