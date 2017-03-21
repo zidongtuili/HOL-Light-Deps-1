@@ -29,7 +29,7 @@ and get_constr_of_desc = function
   | Types.Tsubst t -> get_constr t
   | _ -> None;;
 
-let rec transform_item setup_id =
+let rec transform_item setup_id rec_flag bnds env =
   let module T = Typedtree in
   let module Ty = Types in
   let module L = Longident in
@@ -116,7 +116,6 @@ let rec transform_item setup_id =
   let exn_pat = anon_pat T.Tpat_any (anon_ty exn_ty) in
   let unit_exp = anon_exp (T.Texp_construct (unit_loc,cunit,[],true))
                           (anon_ty unit_ty) in
-  fun rec_flag bnds env ->
   let item_desc = T.Tstr_value (rec_flag,bnds) in
   let item =
     {
@@ -201,7 +200,6 @@ let rec transform_item setup_id =
   T.Tstr_value (Asttypes.Nonrecursive,[tuple_pat,local]);;
 
 let transform_str setup_id =
-  let transform = transform_item setup_id in
   let rec transform_str str =
     let module T = Typedtree in
     let transform_item item =
@@ -209,7 +207,7 @@ let transform_str setup_id =
         T.str_desc =
           match item.T.str_desc with
           | T.Tstr_value (rec_flag, bnds) ->
-             transform rec_flag bnds str.T.str_final_env
+             transform_item setup_id rec_flag bnds str.T.str_final_env
           | T.Tstr_module (id,loc,mod_exp) ->
              let mod_exp =
                { mod_exp with
@@ -227,7 +225,10 @@ let transform_str setup_id =
 let foo xs = Printf.printf "%d\n%!" (List.fold_left (+) 0 xs);;
 let transform_str_foo = transform_str "foo";;
 let strs = ref [];;
-  Toploop.set_str_transformer () (fun str () ->
-                                  let str = transform_str_foo str in
-                                  Printtyped.implementation Format.std_formatter str;
-                                  str,());;
+  Toploop.set_str_transformer ()
+                              (fun str () ->
+                               try
+                                 let str = transform_str_foo str in
+                                 Printtyped.implementation Format.std_formatter str;
+                                 str,()
+                               with _ -> str,());;
