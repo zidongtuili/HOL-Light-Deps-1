@@ -55,14 +55,10 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
   let plist,_ = Env.lookup_type (Longident.Lident "list") !Toploop.toplevel_env in
   let unit_ty = Types.Tconstr (punit,[],ref Types.Mnil) in
   let exn_ty =
-    let p = !Toploop.toplevel_env
-            |> Env.lookup_type (Longident.Lident "exn")
-            |> fst in
+    let p,_ = Env.lookup_type (Longident.Lident "exn") !Toploop.toplevel_env in
     Ty.Tconstr (p,[],ref Ty.Mnil) in
   let int_ty =
-    let p = !Toploop.toplevel_env
-            |> Env.lookup_type (Longident.Lident "int")
-            |> fst in
+    let p,_ = Env.lookup_type (Longident.Lident "int") !Toploop.toplevel_env in
     anon_ty (Ty.Tconstr (p,[],ref Ty.Mnil)) in
   let unit_loc = Location.mknoloc (Longident.Lident "unit") in
   let unit_pat =
