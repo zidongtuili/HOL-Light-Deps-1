@@ -1,18 +1,3 @@
-type modular_id =
-  Module of Ident.t
-            * Types.module_type
-            * Env.t
-            * Types.signature
-            * Env.t
-            * modular_id list
-  | Ident of Ident.t * Types.value_description
-
-let rec split3 = function
-  | [] -> [],[],[]
-  | (x,y,z) :: xyzs ->
-     let xs,ys,zs = split3 xyzs in
-     x::xs, y::ys, z::zs
-
 (* Replace every module item ... which defines idents xs recursively with
      let retry () = let xs = ... in xs in
      let xs = ... in
