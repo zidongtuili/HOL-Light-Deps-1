@@ -33,7 +33,7 @@ and get_constr_of_desc = function
   | _ -> None;;
 
 let id_vd_store = ref [];;
-let rec transform_item path setup_id teardown_id rec_flag bnds env =
+let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
   let module T = Typedtree in
   let module Ty = Types in
   let module L = Longident in
@@ -165,7 +165,8 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env =
                         Location.mknoloc (Longident.Lident (id.Ident.name)) in
                       let p = Path.Pident id in
                       let ty = vd.Ty.val_type in
-                      let exp = anon_exp (T.Texp_ident (p, lid, vd)) ty in
+                      let exp = wrap (anon_exp (T.Texp_ident (p, lid, vd)) ty)
+                                     ty in
                       let pat = anon_pat (T.Tpat_var (id, noloc)) ty in
                       pat::pats,exp::exps,ty::tys)
                      ([],[],[]) id_vds in
@@ -262,7 +263,7 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env =
          tuple_ty in
   T.Tstr_value (Asttypes.Nonrecursive,[tuple_pat,local]);;
 
-let transform_str setup_id teardown_id =
+let transform_str setup_id teardown_id wrap =
   id_vd_store := [];
   let rec transform_str path str =
     let module T = Typedtree in
@@ -277,6 +278,7 @@ let transform_str setup_id teardown_id =
                             rec_flag
                             bnds
                             str.T.str_final_env
+                            wrap
           | T.Tstr_module (id,loc,mod_exp) ->
              let mod_exp =
                { mod_exp with
@@ -309,11 +311,12 @@ let foo_setup xs =
 let foo_teardown () = Printf.printf "TEARDOWN\n%!";;
 let transform_str_foo = transform_str "foo_setup" "foo_teardown";;
 let strs = ref [];;
-  Toploop.set_str_transformer ()
-                              (fun str () ->
-                               try
-                                 let str = transform_str_foo str in
-                                 Printtyped.implementation Format.std_formatter str;
-                                 str,()
-                               with _ -> str,());;
+  Toploop.set_str_transformer
+    ()
+    (fun str () ->
+     try
+       let str = transform_str_foo (fun exp _ -> exp) str in
+       Printtyped.implementation Format.std_formatter str;
+       str,()
+     with _ -> str,());;
 (* Toploop.set_str_transformer () (fun str () -> str,());; *)
