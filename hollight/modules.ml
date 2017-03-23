@@ -263,7 +263,10 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
                       tuple_ty))
             tuple_ty)
          tuple_ty in
-  T.Tstr_value (Asttypes.Nonrecursive,[tuple_pat,local]);;
+  let id_vds2 =
+    List.map (fun (id,vd,i_exp) -> Ident.rename id,vd,i_exp) id_vds in
+  let tuple_pat2,_,_ = mk_tuples id_vds2 in
+  T.Tstr_value (Asttypes.Nonrecursive,[tuple_pat2,local]);;
 
 let transform_str setup_id teardown_id wrap =
   id_vd_store := [];
