@@ -18,6 +18,7 @@ and get_constr_of_desc = function
   | _ -> None;;
 
 let id_vd_store = ref [];;
+let rhs_tree = ref [];;
 let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
   let module T = Typedtree in
   let module Ty = Types in
@@ -204,6 +205,7 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
   let pid_vds =
     List.map (fun (id,_,vid) -> List.rev (id::path),vid) id_vds in
   id_vd_store := !id_vd_store @ pid_vds;
+  rhs_tree := List.map snd bnds;
   let retry rest ty =
     let _,tuple_exp,tuple_ty = mk_tuples id_vds in
     let retry_ident = Ident.create "retry" in
