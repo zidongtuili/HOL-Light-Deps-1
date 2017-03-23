@@ -330,7 +330,7 @@ let strs = ref [];;
                                       | p',[] when p = p' -> Some "modify"
                                       | _ -> None in
                                     BatOption.bind (get_constr ty) f) str in
-       Printtyped.implementation Format.std_formatter str;
+       (*Printtyped.implementation Format.std_formatter str;*)
        str,()
      with _ -> str,());;
 (* Toploop.set_str_transformer () (fun str () -> str,());; *)
