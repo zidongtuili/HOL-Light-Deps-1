@@ -11,7 +11,6 @@ and get_constr_of_desc = function
 let id_vd_store = ref [];;
 let rhs_tree = ref [];;
 let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
-  id_vd_store := [];
   let module T = Typedtree in
   let module Ty = Types in
   let module L = Longident in
@@ -229,15 +228,16 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
        let tuple_exp_desc = T.Texp_tuple exps in
        let tuple_ty = mk_tuple_ty (List.map (fun (_,vd,_) -> vd) id_vd_iexps) in
        anon_exp tuple_exp_desc tuple_ty in
+  let store_length = List.length !id_vd_store in
   let mk_id_vd_iexps id_vds =
     zip_with_index (fun (id,vd) i ->
+                    let i = i + store_length in
                     let iexp =
-                      anon_exp (T.Texp_constant (Asttypes.Const_int i))
-                               int_ty in
+                      anon_exp (T.Texp_constant (Asttypes.Const_int i)) int_ty in
                     id,vd,iexp) id_vds in
   let pid_vds =
     List.map (fun (id,vid) -> List.rev (id::path),vid) id_vds in
-  id_vd_store := pid_vds;
+  id_vd_store := !id_vd_store @ pid_vds;
   rhs_tree := List.map snd bnds;
   let tuple_ty = mk_tuple_ty (List.map snd id_vds) in
   let wrap_bnds rest ty =
@@ -324,6 +324,7 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
   T.Tstr_value (Asttypes.Nonrecursive,[tuple_pat,main]);;
 
 let transform_str setup_id teardown_id wrap =
+  id_vd_store := [];
   let rec transform_str path str =
     let module T = Typedtree in
     let transform_item item =
