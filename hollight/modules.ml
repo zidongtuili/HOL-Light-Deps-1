@@ -138,16 +138,16 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
       let enter_pattern pat =
         { pat with
           T.pat_desc = match pat.T.pat_desc with
-                       | Tpat_var (id,loc) ->
+                       | T.Tpat_var (id,loc) as p ->
                           (try
                               let id = List.assoc id ids_fresh in
-                              Tpat_var (id,loc)
-                            with _ -> pat.T.pat_desc)
-                       | Tpat_alias (pat,id,loc) ->
-                          try
-                            let id = List.assoc id ids_fresh in
-                            Tpat_alias (pat,id,loc)
-                          with _ -> pat.T.pat_desc
+                              T.Tpat_var (id,loc)
+                            with _ -> p)
+                       | T.Tpat_alias (pat,id,loc) as p ->
+                          (try
+                              let id = List.assoc id ids_fresh in
+                              T.Tpat_alias (pat,id,loc)
+                          with _ -> p)
                        | p -> p
         }
       let enter_expression exp =
