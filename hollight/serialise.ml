@@ -133,11 +133,12 @@ let all_json
       o Batstringmap.map (Ezjsonm.list Ezjsonm.int) in
   let const_jsons = of_map const_defs in
   let ty_const_jsons = of_map const_ty_defs in
-  [ "theorem_idents", thm_src_jsons ]
-  @ optionally json_tactics
-               [ "tactic_idents", tac_src_jsons ]
-  @ [ "tracked_theorems", thm_jsons ]
-  @ optionally json_constants
+  dict
+    ([ "theorem_idents", thm_src_jsons ]
+     @ optionally json_tactics
+                  [ "tactic_idents", tac_src_jsons ]
+     @ [ "tracked_theorems", thm_jsons ]
+     @ optionally json_constants
                [ "const_definitions", const_jsons ]
-  @ optionally json_type_constants
-               [ "ty_const_jsons", ty_const_jsons ]));;
+     @ optionally json_type_constants
+                  [ "ty_const_jsons", ty_const_jsons ])));;
