@@ -1,4 +1,14 @@
-let all_json () =
+let all_json
+      ?(serialise_terms = true)
+      ?(serialise_string_terms = true)
+      ?(serialise_proofs = true)
+      ?(serialise_source_theorems = true)
+      ?(serialise_source_tactics = true)
+      ?(serialise_constants = true)
+      ?(serialise_type_constants = true)
+      () =
+  let serialise_tactics = serialise_proofs || serialise_source_tactics in
+  let optionally p xs = if p then xs else [] in
   Meta.(
   Ezjsonm.(
   let rec of_ty = function
@@ -52,12 +62,12 @@ let all_json () =
   let id_of_meta_src meta =
     fst (src_id meta,meta.source.source_id) in
   let of_thm_arg = function
-    | Tracked_thm i -> int i
-    | Concl tm -> of_tm tm in
+    | Tracked_thm i -> Some (int i)
+    | Concl tm -> if serialise_terms then Some (of_tm tm) else None in
   let of_src_tactic_thms (src_tactic,thms) =
     dict
-      [ "tactic_id", int src_tactic.source_id;
-        "thm_args", list of_thm_arg thms
+      [ "tactic_id", int src_tactic.source_id
+      ; "thm_args", list I (Batlist.filter_map of_thm_arg thms)
       ] in
   let rec of_tac_proof (Rose (src_tactic_thms, tac_proofs)) =
     dict
@@ -66,23 +76,35 @@ let all_json () =
       ] in
   let of_thm_meta (thm,meta) =
     dict
-      [ "tracking_id", int meta.tracking_id
-      ; "source_id", int (id_of_meta_src meta)
-      ; "theorem", of_thm thm
-      ; "stringified", string (string_of_thm thm)
-      ; "originates_as", of_thm_origin meta.originates_as
-      ; "tracked_dependencies", list (int o fst) meta.tracked_dependencies
-      ; "tactic_proofs", list of_tac_proof meta.tactic_proofs
-      ; "constants", list string (tm_consts (concl thm))
-      ; "type_constants", list string (tm_ty_consts (concl thm))
-      ; "source_code_theorem_dependencies",
-        list (fun meta -> int meta.source_id)
-             meta.source_code_theorem_dependencies
-      ; "source_code_tactic_dependencies",
-        list of_tactic_dep meta.source_code_tactic_dependencies
-      ; "new_constants", list string (new_consts thm)
-      ; "new_type_constants", list string (new_ty_consts thm)
-      ] in
+      ([ "tracking_id", int meta.tracking_id ]
+       @ optionally serialise_source_theorems
+                    [ "source_id", int (id_of_meta_src meta) ]
+       @ optionally serialise_terms [ "theorem", of_thm thm ]
+       @ optionally serialise_string_terms
+                    [ "stringified", string (string_of_thm thm) ]
+       @ [
+           "originates_as", of_thm_origin meta.originates_as
+         ; "tracked_dependencies", list (int o fst) meta.tracked_dependencies
+         ]
+       @ optionally serialise_proofs
+                    [ "tactic_proofs", list of_tac_proof meta.tactic_proofs ]
+       @ optionally serialise_constants
+                    [ "constants", list string (tm_consts (concl thm)) ]
+       @ optionally serialise_type_constants
+                    [ "type_constants", list string (tm_ty_consts (concl thm)) ]
+       @ optionally serialise_source_theorems
+                    [ "source_code_theorem_dependencies",
+                      list (fun meta -> int meta.source_id)
+                           meta.source_code_theorem_dependencies
+                    ]
+       @ optionally serialise_source_tactics
+                    [ "source_code_tactic_dependencies",
+                      list of_tactic_dep meta.source_code_tactic_dependencies
+                    ]
+       @ optionally serialise_constants
+                    [ "new_constants", list string (new_consts thm) ]
+       @ optionally serialise_type_constants
+                    [ "new_type_constants", list string (new_ty_consts thm) ]) in
   let all_thm_metas = get_thm_metas () in
   let thm_jsons = Ezjsonm.list of_thm_meta all_thm_metas in
   let json_of_thm_src src =
@@ -111,9 +133,11 @@ let all_json () =
       o Batstringmap.map (Ezjsonm.list Ezjsonm.int) in
   let const_jsons = of_map const_defs in
   let ty_const_jsons = of_map const_ty_defs in
-  [ "theorem_idents", thm_src_jsons;
-    "tactic_idents", tac_src_jsons;
-    "tracked_theorems", thm_jsons;
-    "const_definitions", const_jsons;
-    "ty_const_jsons", ty_const_jsons
-  ]));;
+  [ "theorem_idents", thm_src_jsons ]
+  @ optionally serialise_tactics
+               [ "tactic_idents", tac_src_jsons ]
+  @ [ "tracked_theorems", thm_jsons ]
+  @ optionally serialise_constants
+               [ "const_definitions", const_jsons ]
+  @ optionally serialise_type_constants
+               [ "ty_const_jsons", ty_const_jsons ]));;
