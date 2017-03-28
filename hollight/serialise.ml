@@ -39,9 +39,9 @@ let all_json () =
       ] in
   let fields_of_src src of_meta =
     dict
-      ([ "src_id", int src.source_id
-       ; "src_ident", of_ident src.source_ident
-       ; "src_loc", of_location src.location
+      ([ "source_id", int src.source_id
+       ; "source_ident", of_ident src.source_ident
+       ; "location", of_location src.location
        ]
        @ of_meta src.src_obj) in
   let of_tactic_dep (tac,thms) =
