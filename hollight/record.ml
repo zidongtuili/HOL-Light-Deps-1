@@ -189,7 +189,6 @@ module Record_hol_kernel : Recording_hol_kernel =
          let thm = Record(cert,deps,None,constdeps,typedeps,meta) in
          match Acc.find cert !autos with
          | Some f ->
-            Printf.printf "HI\n%!";
             let i,thm = with_tracking thm in f i thm; thm
          | None -> thm
 
