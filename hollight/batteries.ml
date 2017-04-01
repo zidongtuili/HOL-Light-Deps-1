@@ -66,3 +66,4 @@ module Batunix    = BatUnix
 module Batmarshal = BatMarshal
 module Batstring  = BatString
 module type Orderedtype = BatInterfaces.OrderedType
+module Batord = BatOrd
