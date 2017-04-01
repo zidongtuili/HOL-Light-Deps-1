@@ -17,12 +17,12 @@ and get_constr_of_desc = function
                [init] [i] x in
              with _ -> x
      let () = [teardown ()] in
-     [final] [i] x
+     [post_setup] [i] x
 *)
 let id_vd_store = ref [];;
-let rhs_tree = ref (Env.empty,[]);;
+let rhs_tree = ref [];;
 let rec transform_item
-          qualifiers setup_id teardown_id rec_flag bnds env wrap_init wrap_final =
+          qualifiers setup_id teardown_id rec_flag bnds env wrap_init post_setup =
   let module T = Typedtree in
   let module Ty = Types in
   let module L = Longident in
@@ -250,7 +250,7 @@ let rec transform_item
   let pid_vds =
     List.map (fun (id,vid) -> (List.rev qualifiers,id),vid) id_vds in
   id_vd_store := !id_vd_store @ pid_vds;
-  rhs_tree := Env.empty,List.map snd bnds;
+  rhs_tree := List.map snd bnds;
   let tuple_ty = mk_tuple_ty (List.map snd id_vds) in
   let wrap_bnds rest ty =
     let id_vd_iexps = mk_id_vd_iexps id_vds_fresh in
@@ -321,7 +321,7 @@ let rec transform_item
            let id_vds2 = refresh id_vds in
            let tuple_pat2 = mk_tuple_pat id_vds2 in
            let id_vd_iexps2 = mk_id_vd_iexps id_vds2 in
-           let tuple_exp2 = mk_tuple_exp_wrap wrap_final id_vd_iexps2 in
+           let tuple_exp2 = mk_tuple_exp_wrap post_setup id_vd_iexps2 in
            let retry_and_teardown =
              anon_exp
                (T.Texp_let (Asttypes.Nonrecursive,
@@ -336,7 +336,7 @@ let rec transform_item
   let tuple_pat = mk_tuple_pat id_vds in
   T.Tstr_value (Asttypes.Nonrecursive,[tuple_pat,main]);;
 
-let transform_str setup_id teardown_id wrap_init wrap_final =
+let transform_str setup_id teardown_id wrap_init post_setup =
   id_vd_store := [];
   let rec transform_str qualifiers str =
     let module T = Typedtree in
@@ -352,7 +352,7 @@ let transform_str setup_id teardown_id wrap_init wrap_final =
                             bnds
                             str.T.str_final_env
                             wrap_init
-                            wrap_final
+                            post_setup
           | T.Tstr_module (id,loc,mod_exp) ->
              let mod_exp =
                { mod_exp with
