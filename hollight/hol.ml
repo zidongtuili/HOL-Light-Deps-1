@@ -124,11 +124,11 @@ module Meta =
   struct
     type 'a srced =
       {
-        source_id    : int;
-        source_ident : Ident.t;
-        src_modules  : Ident.t list;
-        location     : Location.t;
-        src_obj      : 'a
+        source_id      : int;
+        source_ident   : Ident.t;
+        source_modules : Ident.t list;
+        location       : Location.t;
+        src_obj        : 'a
       }
   end
 
@@ -217,19 +217,19 @@ loads "printer.ml";;   (* Crude prettyprinter                               *)
 loads "preterm.ml";;  (* Preterms and their interconversion with terms     *)
 loads "parser.ml";;    (* Lexer and parser                                  *)
 
-(* loadt "meta.ml";; *)
+loadt "meta.ml";;
 
-(* (\* ------------------------------------------------------------------------- *\) *)
-(* (\* Higher level deductive system.                                            *\) *)
-(* (\* ------------------------------------------------------------------------- *\) *)
+(* ------------------------------------------------------------------------- *)
+(* Higher level deductive system.                                            *)
+(* ------------------------------------------------------------------------- *)
 
-(* loads "equal.ml";;        (\* Basic equality reasoning and conversionals      *\) *)
-(* loads "bool.ml";;         (\* Boolean theory and basic derived rules          *\) *)
-(* loads "drule.ml";;        (\* Additional derived rules                        *\) *)
-(* loadt "tactic_types.ml";; (\* Tactics, tacticals and goal stack               *\) *)
-(* loadt "meta_tactic.ml";; *)
+loads "equal.ml";;        (* Basic equality reasoning and conversionals      *)
+loads "bool.ml";;         (* Boolean theory and basic derived rules          *)
+loads "drule.ml";;        (* Additional derived rules                        *)
+loadt "tactic_types.ml";; (* Tactics, tacticals and goal stack               *)
+loadt "meta_tactic.ml";;
 
-(* loadt "tactics.ml";;      (\* Tactics, tacticals and goal stack               *\) *)
+loadt "tactics.ml";;      (* Tactics, tacticals and goal stack               *)
 
 (* loadt "meta_conj.ml";; *)
 

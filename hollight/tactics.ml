@@ -148,14 +148,10 @@ let null_src =
   {
     Meta.source_id = 0;
     Meta.source_ident = Ident.create "";
+    Meta.source_modules = [];
     Meta.location = Location.none;
     Meta.src_obj = ()
   }
-
-let list_type_path =
-  !Toploop.toplevel_env
-  |> Env.lookup_type (Longident.Lident "list")
-  |> fst;;
 
 let rec get_list_arg t = get_list_arg_of_desc t.Types.desc
 and get_list_arg_of_desc = function
@@ -164,68 +160,7 @@ and get_list_arg_of_desc = function
   | Types.Tsubst t -> get_list_arg t
   | t -> None;;
 
-(* Rebind a tactic to one which boxes itself with the theorems it has been applied *
-to. *)
-(* NOTE: This is dangerously magical -- expect bugs to manifest as segfaults. *)
-(* TODO: Extend magic_extract to extract theorems from more foldable data
-structures. Right now, we only deal with the identity and list foldables. *)
-let (rebind_magically : Types.value_description
-                        -> (thm list -> tactic -> tactic)
-                        -> Obj.t -> Obj.t) = fun vd box_tac tac ->
-  let rec magic_ap : 'a 'b 'c. (thm list -> 'a -> 'b) -> Types.type_expr list -> 'c =
-    fun f args ->
-    match args with
-    | [] -> Obj.magic f
-    | arg_vd::args_vds ->
-       magic_ap (fun ths g x -> f (ths @ magic_extract arg_vd x) (g x)) args_vds
-  and magic_extract : 'a. Types.type_expr -> 'a -> thm list = fun arg_vd ->
-    match get_constr arg_vd with
-    | Some (c,[list_arg_vd]) when Path.same list_type_path c ->
-       let f = magic_extract list_arg_vd in
-       Obj.magic (fun thms -> Batlist.bind thms f)
-    | Some (c,args) when Path.same thm_type_path c -> Obj.magic (fun thm -> [thm])
-    | _ -> fun _ -> [] in
-  match tactic_antecedents vd with
-  | Some ants -> Obj.repr (magic_ap box_tac (rev ants) [] tac)
-  | None -> tac;;
-
-let (install_tactic_transformer :
-       (unit Meta.srced -> Types.value_description -> Obj.t -> Obj.t)
-       -> unit -> unit) =
-  fun box ->
-  let hook =
-    {
-      meta_tactic_diff_hook with
-      Toploop.env_diff_ident =
-        (fun ident vd (dep_source_thms, dep_source_tactics) ->
-         meta_diff_hook.env_diff_ident ident vd (dep_source_thms);
-         if is_tactic vd then
-           let src = register_tactic_ident ident vd () in
-           ident.Ident.name
-           |> Toploop.getvalue
-           |> box src vd
-           |> Obj.repr
-           |> Toploop.setvalue ident.Ident.name
-         else ();
-         ([], []))
-    } in
-  Toploop.set_env_diff_hook () hook;;
-
-let install_renaming_tactic_boxer () =
-  install_tactic_transformer
-    (fun src vd tac ->
-     rebind_magically vd
-                      (fun thms tac -> RENAME_BOX_TAC src thms tac)
-                      (Obj.obj tac));;
-
-let install_tactic_boxer () =
-  install_tactic_transformer
-    (fun src vd tac ->
-     rebind_magically vd
-                      (fun thms tac -> BOX_TAC src thms tac)
-                      (Obj.obj tac));;
-
-let restore_hook = install_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 let ((ORELSE): tactic -> tactic -> tactic) =
   fun tac1 tac2 g ->
@@ -237,11 +172,11 @@ let (FAIL_TAC: string -> tactic) =
 let (NO_TAC: tactic) =
   FAIL_TAC "NO_TAC";;
 
-let restore_hook = install_renaming_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC;;
 
 let (ALL_TAC:tactic) = fun g -> simple_rose (null_meta,[g],(fun _ [th] -> th));;
 
-let restore_hook = install_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 let TRY tac =
   tac ORELSE ALL_TAC;;
@@ -307,14 +242,14 @@ let FIRST_TCL ttcll =
 (* just in case.                                                             *)
 (* ------------------------------------------------------------------------- *)
 
-let restore_hook = install_renaming_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC;;
 
 let (LABEL_TAC: string -> thm_tactic) =
   fun s thm (asl,w) ->
   simple_rose (null_meta,[(s,thm)::asl,w],
                (fun i [th] -> PROVE_HYP (INSTANTIATE_ALL i thm) th));;
 
-let restore_hook = install_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 let ASSUME_TAC = LABEL_TAC "";;
 
@@ -390,7 +325,7 @@ let HYP =
 (* Basic tactic to use a theorem equal to the goal. Does *no* matching.      *)
 (* ------------------------------------------------------------------------- *)
 
-let restore_hook = install_renaming_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC;;
 
 let (ACCEPT_TAC: thm_tactic) =
   let propagate_thm th i [] = INSTANTIATE_ALL i th in
@@ -420,7 +355,7 @@ let (CONV_TAC: conv -> tactic) =
               [asl,r],
               (fun i [th] -> EQ_MP (INSTANTIATE_ALL i th') th));;
 
-let restore_hook = install_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 (* ------------------------------------------------------------------------- *)
 (* Tactics for equality reasoning.                                           *)
@@ -431,7 +366,7 @@ let (REFL_TAC: tactic) =
     try ACCEPT_TAC(REFL(rand w)) g
     with Failure _ -> failwith "REFL_TAC";;
 
-let restore_hook = install_renaming_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC;;
 
 let (ABS_TAC: tactic) =
   fun (asl,w) ->
@@ -456,7 +391,7 @@ let (MK_COMB_TAC: tactic) =
                      (fun _ [th1;th2] -> MK_COMB(th1,th2)))
     with Failure _ -> failwith "MK_COMB_TAC";;
 
-let restore_hook = install_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 let (AP_TERM_TAC: tactic) =
   let tac = MK_COMB_TAC THENL [REFL_TAC; ALL_TAC] in
@@ -498,7 +433,7 @@ let SUBST_VAR_TAC th =
 (* Basic logical tactics.                                                    *)
 (* ------------------------------------------------------------------------- *)
 
-let restore_hook = install_renaming_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC;;
 
 let (DISCH_TAC: tactic) =
   let f_tm = `F` in
@@ -592,7 +527,7 @@ let (X_GEN_TAC: term -> tactic),
                  (fun i [th] -> EXISTS (instantiate i w,instantiate i t) th)) in
   X_GEN_TAC,X_CHOOSE_TAC,EXISTS_TAC;;
 
-let restore_hook = install_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 let (GEN_TAC: tactic) =
   fun (asl,w) ->
@@ -612,7 +547,7 @@ let (CHOOSE_TAC: thm_tactic) =
           X_CHOOSE_TAC x' xth (asl,w)
       with Failure _ -> failwith "CHOOSE_TAC";;
 
-let restore_hook = install_renaming_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC
 
 let (CONJ_TAC: tactic) =
   fun (asl,w) ->
@@ -688,7 +623,7 @@ let (MATCH_MP_TAC :thm_tactic) =
                                     (fun i [th] -> MP (INSTANTIATE_ALL i xth) th))
                    with Failure _ -> failwith "MATCH_MP_TAC: No match";;
 
-let restore_hook = install_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 let (TRANS_TAC:thm->term->tactic) =
   fun th ->
@@ -793,7 +728,7 @@ let FIRST_X_ASSUM ttac =
 (* Subgoaling and freezing variables (latter is especially useful now).      *)
 (* ------------------------------------------------------------------------- *)
 
-let restore_hook = install_renaming_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC;;
 
 let (SUBGOAL_THEN: term -> thm_tactic -> tactic) =
   fun wa ttac (asl,w) ->
@@ -805,7 +740,7 @@ let (SUBGOAL_THEN: term -> thm_tactic -> tactic) =
             let rose',roses' = bloom rosebud roses in
             Rose ([null_src,[]],[rose;rose']), roses');;
 
-let restore_hook = install_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 let SUBGOAL_TAC s tm prfs =
   match prfs with
@@ -822,7 +757,7 @@ let (FREEZE_THEN :thm_tactical) =
 (* Metavariable tactics.                                                     *)
 (* ------------------------------------------------------------------------- *)
 
-let restore_hook = install_renaming_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC;;
 
 let (X_META_EXISTS_TAC: term -> tactic) =
   fun t (asl,w) ->
@@ -832,7 +767,7 @@ let (X_META_EXISTS_TAC: term -> tactic) =
                      (fun i [th] -> EXISTS (instantiate i w,instantiate i t) th))
     with Failure _ -> failwith "X_META_EXISTS_TAC";;
 
-let restore_hook = install_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 let META_EXISTS_TAC ((asl,w) as gl) =
   let v = fst(dest_exists w) in
@@ -840,7 +775,7 @@ let META_EXISTS_TAC ((asl,w) as gl) =
   let v' = mk_primed_var avoids v in
   X_META_EXISTS_TAC v' gl;;
 
-let restore_hook = install_renaming_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC;;
 
 let (META_SPEC_TAC: term -> thm -> tactic) =
   fun t thm (asl,w) ->
@@ -848,7 +783,7 @@ let (META_SPEC_TAC: term -> thm -> tactic) =
     simple_rose (([t],null_inst),[(("",sth)::asl),w],
                  fun i [th] -> PROVE_HYP (SPEC (instantiate i t) thm) th);;
 
-let restore_hook = install_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 (* ------------------------------------------------------------------------- *)
 (* If all else fails!                                                        *)
