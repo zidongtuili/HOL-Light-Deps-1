@@ -126,8 +126,9 @@ module Meta =
       {
         source_id    : int;
         source_ident : Ident.t;
+        src_modules  : Ident.t list;
         location     : Location.t;
-        src_obj     : 'a
+        src_obj      : 'a
       }
   end
 

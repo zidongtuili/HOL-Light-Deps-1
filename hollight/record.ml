@@ -38,6 +38,7 @@ module type Recording_hol_kernel =
     val dep_info_of_id : int -> dep_info
 
     val auto_identify : (thm * (int -> thm -> unit)) list -> unit
+    val with_tracking : thm -> int * thm
 
     (** The dependencies of a theorem. *)
     val thm_deps         : thm  -> (thm * dep_info) list
@@ -187,11 +188,13 @@ module Record_hol_kernel : Recording_hol_kernel =
       | None ->
          let thm = Record(cert,deps,None,constdeps,typedeps,meta) in
          match Acc.find cert !autos with
-         | Some f -> let i,thm = with_tracking thm in f i thm; thm
+         | Some f ->
+            Printf.printf "HI\n%!";
+            let i,thm = with_tracking thm in f i thm; thm
          | None -> thm
 
     let record0 cert =
-      Record(cert,Depset.empty,None,Stringset.empty,Stringset.empty,Meta.zero ())
+      record cert Depset.empty Stringset.empty Stringset.empty (Meta.zero ())
 
     (* Lift recording over a one argument inference rule. *)
     let record1 rule (Record(cert,deps,dep_info,constdeps,typedeps,meta) as thm) =
