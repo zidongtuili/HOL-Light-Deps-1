@@ -7,6 +7,7 @@
 #require "ezjsonm";;
 #require "monadlib";;
 #use "batteries.ml";;
+#use "modules.ml";;
 module Typedtreeiter = struct
     include TypedtreeIter
     module Defaultiteratorargument = DefaultIteratorArgument
@@ -215,66 +216,66 @@ loads "printer.ml";;   (* Crude prettyprinter                               *)
 loads "preterm.ml";;  (* Preterms and their interconversion with terms     *)
 loads "parser.ml";;    (* Lexer and parser                                  *)
 
-loadt "meta.ml";;
+(* loadt "meta.ml";; *)
 
-(* ------------------------------------------------------------------------- *)
-(* Higher level deductive system.                                            *)
-(* ------------------------------------------------------------------------- *)
+(* (\* ------------------------------------------------------------------------- *\) *)
+(* (\* Higher level deductive system.                                            *\) *)
+(* (\* ------------------------------------------------------------------------- *\) *)
 
-loads "equal.ml";;        (* Basic equality reasoning and conversionals      *)
-loads "bool.ml";;         (* Boolean theory and basic derived rules          *)
-loads "drule.ml";;        (* Additional derived rules                        *)
-loadt "tactic_types.ml";; (* Tactics, tacticals and goal stack               *)
-loadt "meta_tactic.ml";;
+(* loads "equal.ml";;        (\* Basic equality reasoning and conversionals      *\) *)
+(* loads "bool.ml";;         (\* Boolean theory and basic derived rules          *\) *)
+(* loads "drule.ml";;        (\* Additional derived rules                        *\) *)
+(* loadt "tactic_types.ml";; (\* Tactics, tacticals and goal stack               *\) *)
+(* loadt "meta_tactic.ml";; *)
 
-loadt "tactics.ml";;      (* Tactics, tacticals and goal stack               *)
+(* loadt "tactics.ml";;      (\* Tactics, tacticals and goal stack               *\) *)
 
-loadt "meta_conj.ml";;
+(* loadt "meta_conj.ml";; *)
 
-loadt "itab.ml";;       (* Toy prover for intuitionistic logic               *)
-loads "simp.ml";;       (* Basic rewriting and simplification tools.         *)
-loads "theorems.ml";;   (* Additional theorems (mainly for quantifiers) etc. *)
-loadt "ind_defs.ml";;   (* Derived rules for inductive definitions           *)
-loads "class.ml";;      (* Classical reasoning: Choice and Extensionality    *)
-loads "trivia.ml";;     (* Some very basic theories, e.g. type ":1"          *)
-loads "canon.ml";;      (* Tools for putting terms in canonical forms        *)
-loads "meson.ml";;      (* First order automation: MESON (model elimination) *)
-loads "metis.ml";;      (* More advanced first-order automation: Metis       *)
-loads "quot.ml";;       (* Derived rules for defining quotient types         *)
-loads "impconv.ml";;    (* More powerful implicational rewriting etc.        *)
+(* loadt "itab.ml";;       (\* Toy prover for intuitionistic logic               *\) *)
+(* loads "simp.ml";;       (\* Basic rewriting and simplification tools.         *\) *)
+(* loads "theorems.ml";;   (\* Additional theorems (mainly for quantifiers) etc. *\) *)
+(* loadt "ind_defs.ml";;   (\* Derived rules for inductive definitions           *\) *)
+(* loads "class.ml";;      (\* Classical reasoning: Choice and Extensionality    *\) *)
+(* loads "trivia.ml";;     (\* Some very basic theories, e.g. type ":1"          *\) *)
+(* loads "canon.ml";;      (\* Tools for putting terms in canonical forms        *\) *)
+(* loads "meson.ml";;      (\* First order automation: MESON (model elimination) *\) *)
+(* loads "metis.ml";;      (\* More advanced first-order automation: Metis       *\) *)
+(* loads "quot.ml";;       (\* Derived rules for defining quotient types         *\) *)
+(* loads "impconv.ml";;    (\* More powerful implicational rewriting etc.        *\) *)
 
-(* ------------------------------------------------------------------------- *)
-(* Mathematical theories and additional proof tools.                         *)
-(* ------------------------------------------------------------------------- *)
+(* (\* ------------------------------------------------------------------------- *\) *)
+(* (\* Mathematical theories and additional proof tools.                         *\) *)
+(* (\* ------------------------------------------------------------------------- *\) *)
 
-loads "pair.ml";;       (* Theory of pairs                                   *)
-loads "nums.ml";;       (* Axiom of Infinity, definition of natural numbers  *)
-loads "recursion.ml";;  (* Tools for primitive recursion on inductive types  *)
-loads "arith.ml";;      (* Natural number arithmetic                         *)
-loads "wf.ml";;         (* Theory of wellfounded relations                   *)
-loads "calc_num.ml";;   (* Calculation with natural numbers                  *)
-loads "normalizer.ml";; (* Polynomial normalizer for rings and semirings     *)
-loads "grobner.ml";;    (* Groebner basis procedure for most semirings.      *)
-loads "ind_types.ml";;  (* Tools for defining inductive types                *)
-loads "lists.ml";;      (* Theory of lists                                   *)
-loads "realax.ml";;     (* Definition of real numbers                        *)
-loads "calc_int.ml";;   (* Calculation with integer-valued reals             *)
-loads "realarith.ml";;  (* Universal linear real decision procedure          *)
-loads "real.ml";;       (* Derived properties of reals                       *)
-loads "calc_rat.ml";;   (* Calculation with rational-valued reals            *)
-loads "int.ml";;        (* Definition of integers                            *)
-loads "sets.ml";;       (* Basic set theory.                                 *)
-loads "iterate.ml";;    (* Iterated operations                               *)
-loads "cart.ml";;       (* Finite Cartesian products                         *)
-loads "define.ml";;     (* Support for general recursive definitions         *)
+(* loads "pair.ml";;       (\* Theory of pairs                                   *\) *)
+(* loads "nums.ml";;       (\* Axiom of Infinity, definition of natural numbers  *\) *)
+(* loads "recursion.ml";;  (\* Tools for primitive recursion on inductive types  *\) *)
+(* loads "arith.ml";;      (\* Natural number arithmetic                         *\) *)
+(* loads "wf.ml";;         (\* Theory of wellfounded relations                   *\) *)
+(* loads "calc_num.ml";;   (\* Calculation with natural numbers                  *\) *)
+(* loads "normalizer.ml";; (\* Polynomial normalizer for rings and semirings     *\) *)
+(* loads "grobner.ml";;    (\* Groebner basis procedure for most semirings.      *\) *)
+(* loads "ind_types.ml";;  (\* Tools for defining inductive types                *\) *)
+(* loads "lists.ml";;      (\* Theory of lists                                   *\) *)
+(* loads "realax.ml";;     (\* Definition of real numbers                        *\) *)
+(* loads "calc_int.ml";;   (\* Calculation with integer-valued reals             *\) *)
+(* loads "realarith.ml";;  (\* Universal linear real decision procedure          *\) *)
+(* loads "real.ml";;       (\* Derived properties of reals                       *\) *)
+(* loads "calc_rat.ml";;   (\* Calculation with rational-valued reals            *\) *)
+(* loads "int.ml";;        (\* Definition of integers                            *\) *)
+(* loads "sets.ml";;       (\* Basic set theory.                                 *\) *)
+(* loads "iterate.ml";;    (\* Iterated operations                               *\) *)
+(* loads "cart.ml";;       (\* Finite Cartesian products                         *\) *)
+(* loads "define.ml";;     (\* Support for general recursive definitions         *\) *)
 
-(* ------------------------------------------------------------------------- *)
-(* The help system. *)
-(* ------------------------------------------------------------------------- *)
+(* (\* ------------------------------------------------------------------------- *\) *)
+(* (\* The help system. *\) *)
+(* (\* ------------------------------------------------------------------------- *\) *)
 
-loads "help.ml";;       (* Online help using the entries in Help directory   *)
-loads "database.ml";;   (* List of name-theorem pairs for search system      *)
+(* loads "help.ml";;       (\* Online help using the entries in Help directory   *\) *)
+(* loads "database.ml";;   (\* List of name-theorem pairs for search system      *\) *)
 
-loadt "serialise.ml";;
+(* loadt "serialise.ml";; *)
 
-open Pervasives;;
+(* open Pervasives;; *)

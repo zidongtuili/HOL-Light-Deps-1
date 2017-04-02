@@ -1,15 +1,6 @@
-(* Replace every module item ... which defines idents xs recursively with
-     let retry () = let xs = ... in xs in
-     let xs = ... in
-       let () = setup result in
-       let xs =
-         try
-           retry ys
-         with _ -> result
-       let () = tear_down () in
-       xs
-     where ys consists of those xs of setup_arg_ty
- *)
+let zip_with_index f xs =
+  List.rev (snd (List.fold_left (fun (n,xs) x -> (n+1,f x n :: xs)) (0,[]) xs));;
+
 let rec get_constr t = get_constr_of_desc t.Types.desc
 and get_constr_of_desc = function
   | Types.Tconstr (p,args,_) -> Some (p,args)
@@ -20,6 +11,7 @@ and get_constr_of_desc = function
 let id_vd_store = ref [];;
 let rhs_tree = ref [];;
 let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
+  id_vd_store := [];
   let module T = Typedtree in
   let module Ty = Types in
   let module L = Longident in
@@ -133,6 +125,46 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
       T.str_env = env
     } in
   let ids = Translmod.defined_idents [item] in
+  let vds = List.map (fun id -> let p = Path.Pident id in
+                                let vd = Env.find_value p env in
+                                vd) ids in
+  let ids_fresh = List.map (fun id -> id,Ident.rename id) ids in
+  let id_vds = List.combine ids vds in
+  let id_vds_fresh = BatList.map2 (fun (_,id) vd -> id,vd) ids_fresh vds in
+  let refresh id_vds = List.map (fun (id,vd) -> Ident.rename id,vd) id_vds in
+  let module Rename : TypedtreeMap.MapArgument =
+    struct
+      include TypedtreeMap.DefaultMapArgument
+      let enter_pattern pat =
+        { pat with
+          T.pat_desc = match pat.T.pat_desc with
+                       | Tpat_var (id,loc) ->
+                          (try
+                              let id = List.assoc id ids_fresh in
+                              Tpat_var (id,loc)
+                            with _ -> pat.T.pat_desc)
+                       | Tpat_alias (pat,id,loc) ->
+                          try
+                            let id = List.assoc id ids_fresh in
+                            Tpat_alias (pat,id,loc)
+                          with _ -> pat.T.pat_desc
+                       | p -> p
+        }
+      let enter_expression exp =
+        { exp with
+          T.exp_desc = match exp.T.exp_desc with
+                       | Texp_ident (Path.Pident id,l,vd) ->
+                          (try
+                              let id = List.assoc id ids_fresh in
+                              T.Texp_ident (Path.Pident id,l,vd)
+                            with _ -> exp.T.exp_desc)
+                       | exp -> exp
+        }
+    end in
+  let module RenameMap = TypedtreeMap.MakeMap(Rename) in
+  let bnds_fresh =
+    List.map (fun (pat,rhs) ->
+              RenameMap.map_pattern pat, RenameMap.map_expression rhs) bnds in
   let mk_setup exps =
     match exps with
     | [] -> None
@@ -140,7 +172,7 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
        let list = mk_list exps in
        Some (anon_exp (T.Texp_apply (setup_desc, ["",Some list,T.Required]))
                       (anon_ty unit_ty)) in
-  let mk_wrap wrap_id i_exp exp ty =
+  let mk_wrap wrap_id iexp exp ty =
     let wrap_path,wrap_vd =
       Env.lookup_value (Longident.Lident wrap_id) !Toploop.toplevel_env in
     let Path.Pident wrap_id = wrap_path in
@@ -152,64 +184,77 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
     let wrap_ap1_ty = anon_ty (Ty.Tarrow ("",ty,ty,Ty.Cok)) in
     let wrap_ap1 =
       anon_exp (T.Texp_apply (anon_exp wrap_desc wrap_ty,
-                              ["",Some i_exp,T.Required]))
+                              ["",Some iexp,T.Required]))
                wrap_ap1_ty in
     anon_exp (T.Texp_apply (wrap_ap1, ["",Some exp,T.Required])) ty in
-  let mk_tuples id_vds =
-    let pats,exps,tys =
-      List.fold_left (fun (pats,exps,tys) (id,vd,i_exp) ->
-                      let lid =
-                        Location.mknoloc (Longident.Lident (id.Ident.name)) in
-                      let p = Path.Pident id in
-                      let ty = vd.Ty.val_type in
-                      let exp = anon_exp (T.Texp_ident (p, lid, vd)) ty in
-                      let exp =
-                        match wrap ty with
-                        | None -> exp
-                        | Some wrap_id -> mk_wrap wrap_id i_exp exp ty in
-                      let pat = anon_pat (T.Tpat_var (id, noloc)) ty in
-                      pat::pats,exp::exps,ty::tys)
-                     ([],[],[]) id_vds in
-    match List.rev pats,List.rev exps,List.rev tys with
-    | [pat],[exp],[ty] -> pat,exp,ty
-    | pats,exps,tys ->
-       let tuple_pat_desc = T.Tpat_tuple pats in
-       let tuple_exp_desc = T.Texp_tuple exps in
+  let mk_ty vd = vd.Ty.val_type in
+  let mk_tuple_ty = function
+    | [vd] -> mk_ty vd
+    | vds ->
+       let tys = List.map mk_ty vds in
        let tuple_ty_desc = Ty.Ttuple tys in
-       let tuple_ty = anon_ty tuple_ty_desc in
-       anon_pat tuple_pat_desc tuple_ty,
-       anon_exp tuple_exp_desc tuple_ty,
-       tuple_ty in
-  let id_vds,setup_id_vds,setup_exp =
-    let id_vds,setup_id_vds,setup_exps,_ =
-      List.fold_left (fun (id_vds,setup_id_vds,setup_exps,id_vd_num) id ->
-                      let p = Path.Pident id in
-                      let vd = Env.find_value p env in
-                      let i_exp =
-                        anon_exp (T.Texp_constant (Asttypes.Const_int id_vd_num))
-                                 int_ty in
-                      let pat,exp,ty = mk_tuples [id,vd,i_exp] in
-                      let pair_ty = anon_ty (Ty.Ttuple [ty;int_ty]) in
-                      let setup_pair =
-                        anon_exp (T.Texp_tuple [exp;i_exp]) pair_ty in
-                      let setup_exps,setup_id_vds =
-                        if get_constr vd.Ty.val_type = setup_arg_constr then
-                          setup_pair :: setup_exps, (id,vd) :: setup_id_vds
-                        else setup_exps, setup_id_vds in
-                      (id,vd,i_exp) :: id_vds,
-                      setup_id_vds,
-                      setup_exps,
-                      id_vd_num + 1)
-                     ([],[],[],List.length !id_vd_store) ids in
-    List.rev id_vds,List.rev setup_id_vds,mk_setup (List.rev setup_exps) in
+       anon_ty tuple_ty_desc in
+  let mk_pat (id,vd) =
+    let ty = vd.Ty.val_type in
+    anon_pat (T.Tpat_var (id, noloc)) ty in
+  let mk_tuple_pat = function
+    | [id,vd] -> mk_pat (id,vd)
+    | id_vds ->
+       let pats = List.map mk_pat id_vds in
+       let tuple_pat_desc = T.Tpat_tuple pats in
+       let ty = mk_tuple_ty (List.map snd id_vds) in
+       anon_pat tuple_pat_desc ty in
+  let mk_exp_ty (id,vd) =
+    let lid =
+      Location.mknoloc (Longident.Lident (id.Ident.name)) in
+    let p = Path.Pident id in
+    let ty = vd.Ty.val_type in
+    anon_exp (T.Texp_ident (p, lid, vd)) ty,ty in
+  let mk_wrap_exp (id,vd,iexp) =
+    let exp,ty = mk_exp_ty (id,vd) in
+    match wrap ty with
+    | None -> exp
+    | Some wrap_id -> mk_wrap wrap_id iexp exp ty in
+  let mk_tuple_exp = function
+    | [id_vd] -> fst (mk_exp_ty id_vd)
+    | id_vds ->
+       let exps = List.map (fst % mk_exp_ty) id_vds in
+       let tuple_exp_desc = T.Texp_tuple exps in
+       let tuple_ty = mk_tuple_ty (List.map snd id_vds) in
+       anon_exp tuple_exp_desc tuple_ty in
+  let mk_tuple_exp_wrap = function
+    | [id_vd_iexp] -> mk_wrap_exp id_vd_iexp
+    | id_vd_iexps ->
+       let exps = List.map mk_wrap_exp id_vd_iexps in
+       let tuple_exp_desc = T.Texp_tuple exps in
+       let tuple_ty = mk_tuple_ty (List.map (fun (_,vd,_) -> vd) id_vd_iexps) in
+       anon_exp tuple_exp_desc tuple_ty in
+  let mk_id_vd_iexps id_vds =
+    zip_with_index (fun (id,vd) i ->
+                    let iexp =
+                      anon_exp (T.Texp_constant (Asttypes.Const_int i))
+                               int_ty in
+                    id,vd,iexp) id_vds in
   let pid_vds =
-    List.map (fun (id,_,vid) -> List.rev (id::path),vid) id_vds in
-  id_vd_store := !id_vd_store @ pid_vds;
+    List.map (fun (id,vid) -> List.rev (id::path),vid) id_vds in
+  id_vd_store := pid_vds;
   rhs_tree := List.map snd bnds;
-  let retry rest ty =
-    let _,tuple_exp,tuple_ty = mk_tuples id_vds in
+  let tuple_ty = mk_tuple_ty (List.map snd id_vds) in
+  let wrap_bnds rest ty =
+    let id_vd_iexps = mk_id_vd_iexps id_vds_fresh in
+    let wrap_tuple = mk_tuple_exp_wrap id_vd_iexps in
+    let id_vds2 = refresh id_vds in
+    let tuple_pat = mk_tuple_pat id_vds2 in
+    let tuple_exp = mk_tuple_exp id_vds2 in
+    anon_exp (T.Texp_let (rec_flag,
+                          bnds_fresh,
+                          anon_exp (T.Texp_let (Asttypes.Nonrecursive,
+                                                [tuple_pat,wrap_tuple],
+                                                rest id_vd_iexps tuple_exp))
+                                   ty))
+             ty in
+  let let_retry rest ty =
     let retry_ident = Ident.create "retry" in
-    let retry_body = anon_exp (T.Texp_let (rec_flag,bnds,tuple_exp)) tuple_ty in
     let retry_loc = Location.mknoloc (Longident.Lident (retry_ident.Ident.name)) in
     let retry_ty = Ty.Tarrow ("",anon_ty unit_ty,tuple_ty,Ty.Cok) in
     let retry_vd =
@@ -218,58 +263,67 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
         Ty.val_kind = Ty.Val_reg;
         Ty.val_loc = Location.none
       } in
+    let retry_exp =
+      anon_exp (T.Texp_ident (Path.Pident retry_ident,
+                              retry_loc,
+                              retry_vd))
+               (anon_ty retry_ty) in
     anon_exp
       (T.Texp_let (Asttypes.Nonrecursive,
                    [anon_pat (T.Tpat_var (retry_ident,noloc)) ty,
-                    anon_exp (T.Texp_function ("",[unit_pat,retry_body],T.Total))
+                    anon_exp (T.Texp_function ("",[unit_pat,
+                                                   wrap_bnds (fun _ tuple -> tuple)
+                                                             tuple_ty],
+                                               T.Total))
                              tuple_ty],
-                   rest (anon_exp (T.Texp_ident (Path.Pident retry_ident,
-                                                 retry_loc,
-                                                 retry_vd))
-                                  (anon_ty retry_ty))))
+                   rest retry_exp ty))
       ty in
-  let tuple_pat,tuple_exp,tuple_ty = mk_tuples id_vds in
-  let local =
-    match setup_exp with
-    | None ->
-       anon_exp (T.Texp_let (rec_flag,bnds,tuple_exp)) tuple_ty
-    | Some setup_exp ->
-       let app_retry retry =
-         anon_exp (T.Texp_apply (retry, ["",Some unit_exp,T.Required]))
-                  tuple_ty in
-       let setup body = anon_exp (T.Texp_let (Asttypes.Nonrecursive,
-                                              [unit_pat,setup_exp],
-                                              body)) in
-       let teardown body = anon_exp (T.Texp_let (Asttypes.Nonrecursive,
-                                                 [unit_pat,teardown_exp],
-                                                 body)) in
-       let call_retry retry_exp =
-         anon_exp (T.Texp_try (app_retry retry_exp,
-                               [exn_pat,tuple_exp]))
-                  tuple_ty in
-       let id_vds2 =
-         List.map (fun (id,vd,i_exp) -> Ident.rename id,vd,i_exp) id_vds in
-       let tuple_pat2,tuple_exp2,_ = mk_tuples id_vds2 in
-       retry
-         (fun retry_exp ->
-          anon_exp
-            (T.Texp_let
-               (rec_flag,
-                bnds,
-                setup (anon_exp (T.Texp_let (Asttypes.Nonrecursive,
-                                             [tuple_pat2,call_retry retry_exp],
-                                             teardown tuple_exp tuple_ty))
-                                tuple_ty)
-                      tuple_ty))
-            tuple_ty)
-         tuple_ty in
-  let id_vds2 =
-    List.map (fun (id,vd,i_exp) -> Ident.rename id,vd,i_exp) id_vds in
-  let tuple_pat2,_,_ = mk_tuples id_vds2 in
-  T.Tstr_value (Asttypes.Nonrecursive,[tuple_pat2,local]);;
+  let main =
+    let rest retry ty =
+      let rest id_vd_iexps tuple_exp =
+        let setup_exp =
+          let setup_args =
+            BatList.filter_map
+              (fun (id,vd,iexp) ->
+               let exp,ty = mk_exp_ty (id,vd) in
+               let pair_ty = anon_ty (Ty.Ttuple [ty;int_ty]) in
+               let setup_pair =
+                 anon_exp (T.Texp_tuple [exp;iexp]) pair_ty in
+               if get_constr vd.Ty.val_type = setup_arg_constr then
+                 Some setup_pair
+               else None)
+              id_vd_iexps in
+          mk_setup setup_args in
+        match setup_exp with
+        | None -> tuple_exp
+        | Some setup_exp ->
+           let app_retry =
+             anon_exp (T.Texp_apply (retry, ["",Some unit_exp,T.Required]))
+                      tuple_ty in
+           let setup body = anon_exp (T.Texp_let (Asttypes.Nonrecursive,
+                                                  [unit_pat,setup_exp],
+                                                  body)) in
+           let teardown body = anon_exp (T.Texp_let (Asttypes.Nonrecursive,
+                                                     [unit_pat,teardown_exp],
+                                                     body)) in
+           let id_vds2 = refresh id_vds in
+           let tuple_pat2 = mk_tuple_pat id_vds2 in
+           let tuple_exp2 = mk_tuple_exp id_vds2 in
+           let retry_and_teardown =
+             anon_exp
+               (T.Texp_let (Asttypes.Nonrecursive,
+                            [tuple_pat2,anon_exp (T.Texp_try (app_retry,
+                                                              [exn_pat,tuple_exp]))
+                                                 tuple_ty],
+                            teardown tuple_exp2 tuple_ty))
+               tuple_ty in
+           setup retry_and_teardown tuple_ty in
+      wrap_bnds rest tuple_ty in
+    let_retry rest tuple_ty in
+  let tuple_pat = mk_tuple_pat id_vds in
+  T.Tstr_value (Asttypes.Nonrecursive,[tuple_pat,main]);;
 
 let transform_str setup_id teardown_id wrap =
-  id_vd_store := [];
   let rec transform_str path str =
     let module T = Typedtree in
     let transform_item item =
@@ -306,9 +360,11 @@ let print_path =
 let foo_setup xs =
   let print out =
     BatPrintf.fprintf out "SETUP\n";
-    List.iter (fun (x,i) -> BatPrintf.fprintf out "%d %a = %d\n%!"
-                                              i print_path
-                                              (fst (List.nth !id_vd_store i)) x)
+    List.iter (fun (x,i) ->
+               BatPrintf.fprintf out "%d %a = %d\n%!"
+                                 i
+                                 print_path (fst (List.nth !id_vd_store i))
+                                 x)
               xs;
     () in
   print BatIO.stdout;;
@@ -319,6 +375,7 @@ let modify i x =
   BatPrintf.fprintf BatIO.stdout "Modifying: %a\n" print_path
                     (fst (List.nth !id_vd_store i));
   x * 100;;
+let exns = ref [];;
 let strs = ref [];;
   Toploop.set_str_transformer
     ()
@@ -330,7 +387,7 @@ let strs = ref [];;
                                       | p',[] when p = p' -> Some "modify"
                                       | _ -> None in
                                     BatOption.bind (get_constr ty) f) str in
-       (*Printtyped.implementation Format.std_formatter str;*)
+             Printtyped.implementation Format.std_formatter str;
        str,()
-     with _ -> str,());;
+     with exn -> exns := exn :: !exns; str,());;
 (* Toploop.set_str_transformer () (fun str () -> str,());; *)
