@@ -8,9 +8,21 @@ and get_constr_of_desc = function
   | Types.Tsubst t -> get_constr t
   | _ -> None;;
 
+(* Replace the module item
+     let x = ...
+   with
+     let x = [init] [i] x in
+     let () = [setup [x,i]] in
+     let x = try
+               [init] [i] x in
+             with _ -> x
+     let () = [teardown ()] in
+     [final] [i] x
+*)
 let id_vd_store = ref [];;
-let rhs_tree = ref [];;
-let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
+let rhs_tree = ref (Env.empty,[]);;
+let rec transform_item
+          qualifiers setup_id teardown_id rec_flag bnds env wrap_init wrap_final =
   let module T = Typedtree in
   let module Ty = Types in
   let module L = Longident in
@@ -152,7 +164,7 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
       let enter_expression exp =
         { exp with
           T.exp_desc = match exp.T.exp_desc with
-                       | Texp_ident (Path.Pident id,l,vd) ->
+                       | T.Texp_ident (Path.Pident id,l,vd) ->
                           (try
                               let id = List.assoc id ids_fresh in
                               T.Texp_ident (Path.Pident id,l,vd)
@@ -209,7 +221,7 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
     let p = Path.Pident id in
     let ty = vd.Ty.val_type in
     anon_exp (T.Texp_ident (p, lid, vd)) ty,ty in
-  let mk_wrap_exp (id,vd,iexp) =
+  let mk_wrap_exp wrap (id,vd,iexp) =
     let exp,ty = mk_exp_ty (id,vd) in
     match wrap ty with
     | None -> exp
@@ -221,10 +233,10 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
        let tuple_exp_desc = T.Texp_tuple exps in
        let tuple_ty = mk_tuple_ty (List.map snd id_vds) in
        anon_exp tuple_exp_desc tuple_ty in
-  let mk_tuple_exp_wrap = function
-    | [id_vd_iexp] -> mk_wrap_exp id_vd_iexp
+  let mk_tuple_exp_wrap wrap = function
+    | [id_vd_iexp] -> mk_wrap_exp wrap id_vd_iexp
     | id_vd_iexps ->
-       let exps = List.map mk_wrap_exp id_vd_iexps in
+       let exps = List.map (mk_wrap_exp wrap) id_vd_iexps in
        let tuple_exp_desc = T.Texp_tuple exps in
        let tuple_ty = mk_tuple_ty (List.map (fun (_,vd,_) -> vd) id_vd_iexps) in
        anon_exp tuple_exp_desc tuple_ty in
@@ -236,20 +248,20 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
                       anon_exp (T.Texp_constant (Asttypes.Const_int i)) int_ty in
                     id,vd,iexp) id_vds in
   let pid_vds =
-    List.map (fun (id,vid) -> List.rev (id::path),vid) id_vds in
+    List.map (fun (id,vid) -> (List.rev qualifiers,id),vid) id_vds in
   id_vd_store := !id_vd_store @ pid_vds;
-  rhs_tree := List.map snd bnds;
+  rhs_tree := Env.empty,List.map snd bnds;
   let tuple_ty = mk_tuple_ty (List.map snd id_vds) in
   let wrap_bnds rest ty =
     let id_vd_iexps = mk_id_vd_iexps id_vds_fresh in
-    let wrap_tuple = mk_tuple_exp_wrap id_vd_iexps in
+    let wrap_init_tuple = mk_tuple_exp_wrap wrap_init id_vd_iexps in
     let id_vds2 = refresh id_vds in
     let tuple_pat = mk_tuple_pat id_vds2 in
     let tuple_exp = mk_tuple_exp id_vds2 in
     anon_exp (T.Texp_let (rec_flag,
                           bnds_fresh,
                           anon_exp (T.Texp_let (Asttypes.Nonrecursive,
-                                                [tuple_pat,wrap_tuple],
+                                                [tuple_pat,wrap_init_tuple],
                                                 rest id_vd_iexps tuple_exp))
                                    ty))
              ty in
@@ -308,7 +320,8 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
                                                      body)) in
            let id_vds2 = refresh id_vds in
            let tuple_pat2 = mk_tuple_pat id_vds2 in
-           let tuple_exp2 = mk_tuple_exp id_vds2 in
+           let id_vd_iexps2 = mk_id_vd_iexps id_vds2 in
+           let tuple_exp2 = mk_tuple_exp_wrap wrap_final id_vd_iexps2 in
            let retry_and_teardown =
              anon_exp
                (T.Texp_let (Asttypes.Nonrecursive,
@@ -323,29 +336,30 @@ let rec transform_item path setup_id teardown_id rec_flag bnds env wrap =
   let tuple_pat = mk_tuple_pat id_vds in
   T.Tstr_value (Asttypes.Nonrecursive,[tuple_pat,main]);;
 
-let transform_str setup_id teardown_id wrap =
+let transform_str setup_id teardown_id wrap_init wrap_final =
   id_vd_store := [];
-  let rec transform_str path str =
+  let rec transform_str qualifiers str =
     let module T = Typedtree in
     let transform_item item =
       { item with
         T.str_desc =
           match item.T.str_desc with
           | T.Tstr_value (rec_flag, bnds) ->
-             transform_item path
+             transform_item qualifiers
                             setup_id
                             teardown_id
                             rec_flag
                             bnds
                             str.T.str_final_env
-                            wrap
+                            wrap_init
+                            wrap_final
           | T.Tstr_module (id,loc,mod_exp) ->
              let mod_exp =
                { mod_exp with
                  T.mod_desc =
                    match mod_exp.T.mod_desc with
                    | T.Tmod_structure str ->
-                      let str = transform_str (id :: path) str in
+                      let str = transform_str (id :: qualifiers) str in
                       T.Tmod_structure str
                    | str -> str
                } in
@@ -355,16 +369,21 @@ let transform_str setup_id teardown_id wrap =
     { str with T.str_items = List.map transform_item str.T.str_items } in
   transform_str [];;
 
-let print_path =
+let my_vds = ref [];;
+let print_path out (ids,id) =
   BatList.print ~first:"" ~last:"" ~sep:"."
-                (fun out id -> BatPrintf.fprintf out "%s" id.Ident.name);;
+                (fun out id -> BatPrintf.fprintf out "%s" id.Ident.name)
+                out
+                (ids @ [id]);;
 let foo_setup xs =
   let print out =
     BatPrintf.fprintf out "SETUP\n";
     List.iter (fun (x,i) ->
+               let p,vd = List.nth !id_vd_store i in
+               my_vds := vd :: !my_vds;
                BatPrintf.fprintf out "%d %a = %d\n%!"
                                  i
-                                 print_path (fst (List.nth !id_vd_store i))
+                                 print_path p
                                  x)
               xs;
     () in
@@ -376,19 +395,30 @@ let modify i x =
   BatPrintf.fprintf BatIO.stdout "Modifying: %a\n" print_path
                     (fst (List.nth !id_vd_store i));
   x * 100;;
+let modify2 i x =
+  BatPrintf.fprintf BatIO.stdout "Modifying again: %a\n" print_path
+                    (fst (List.nth !id_vd_store i));
+  x * 200;;
 let exns = ref [];;
 let strs = ref [];;
-  Toploop.set_str_transformer
-    ()
-    (fun str () ->
-     try
-       let p,_ = Env.lookup_type (Longident.Lident "int") !Toploop.toplevel_env in
-       let str = transform_str_foo (fun ty ->
-                                    let f = function
-                                      | p',[] when p = p' -> Some "modify"
-                                      | _ -> None in
-                                    BatOption.bind (get_constr ty) f) str in
-             Printtyped.implementation Format.std_formatter str;
-       str,()
-     with exn -> exns := exn :: !exns; str,());;
+Toploop.set_str_transformer
+  ()
+  (fun str () ->
+   try
+     let p,_ = Env.lookup_type (Longident.Lident "int") !Toploop.toplevel_env in
+     (* Printtyped.implementation Format.std_formatter str; *)
+     let str = transform_str_foo (fun ty ->
+                                  let f = function
+                                    | p',[] when p = p' -> Some "modify"
+                                    | _ -> None in
+                                  BatOption.bind (get_constr ty) f)
+                                 (fun ty ->
+                                  let f = function
+                                    | p',[] when p = p' -> Some "modify2"
+                                    | _ -> None in
+                                  BatOption.bind (get_constr ty) f)
+                                 str in
+     (* Printtyped.implementation Format.std_formatter str; *)
+     str,()
+   with exn -> exns := exn :: !exns; str,());;
 (* Toploop.set_str_transformer () (fun str () -> str,());; *)
