@@ -48,7 +48,16 @@ let register_tactic_ident, find_tactic_src, get_tactic_srcs  =
 
 (* Find tactic rators and return them together with any theorem arguments. *)
 let collect_tactics tree =
-  let tacs = ref [] in
+  let module Tacset =
+    Batset.Make(struct
+                   type t = unit Meta.srced *
+                              ((int * thm) list * thm) Meta.srced Identmap.t
+                   let compare (src,thms) (src',thms') =
+                     Batord.bin_comp
+                       Meta.src_compare src src'
+                       (Identmap.compare Meta.src_compare) thms thms'
+                 end) in
+  let tacs = ref Tacset.empty in
   let module Find_tactics =
     Typedtreeiter.Makeiterator(
         struct
@@ -70,22 +79,24 @@ let collect_tactics tree =
                            let g b = function
                              | _,Some exp,_ -> fold_ident_expr f b exp
                              | _ -> b in
-                           let thms = List.fold_left g Identmap.empty xs
-                                      |> Identmap.to_list
-                                      |> List.map snd in
-                           tacs := (tac_meta, thms) :: !tacs
+                           let thms = List.fold_left g Identmap.empty xs in
+                           tacs := Tacset.add (tac_meta, thms) !tacs
                        | None -> ()))
                 | _ -> ())
             | Typedtree.Texp_ident (p,_,_) ->
                (match resolve_path p with
                 | Some (modules,ident) ->
                    (match find_tactic_src modules ident with
-                    | Some tac_meta -> tacs := (tac_meta, []) :: !tacs
+                    | Some tac_meta ->
+                       tacs := Tacset.add (tac_meta, Identmap.empty) !tacs
                     | None -> ())
                 | None -> ())
             | _ -> ()
         end) in
-  Find_tactics.iter_expression tree; !tacs;;
+  Find_tactics.iter_expression tree;
+  !tacs
+  |> Tacset.to_list
+  |> map (fun (tac,thms) -> tac,Identmap.to_list thms |> map snd)
 
 let mk_tracked_thm = mk_tracked_thm_of_get_tactics collect_tactics
 

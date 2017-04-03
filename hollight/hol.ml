@@ -130,6 +130,7 @@ module Meta =
         location       : Location.t;
         src_obj        : 'a
       }
+    let src_compare src src' = compare src.source_id src'.source_id
   end
 
 type tac_thm = Tracked_thm of int | Concl of term
