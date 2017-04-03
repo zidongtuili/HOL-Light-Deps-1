@@ -140,12 +140,10 @@ module Tracking : (Monad.Monoid with type t = bool * Tacset.t) =
   struct
     type t = bool * Tacset.t
     let zero () = (false,Tacset.empty)
-    let plus l r =
-      let (is_tracked_l,tsl) = l in
-      let (is_tracked_r,tsr) = r in
+    let plus (is_tracked_l,tsl) (is_tracked_r,tsr) =
       false,Tacset.union
-             (if is_tracked_l then Tacset.empty else tsl)
-             (if is_tracked_r then Tacset.empty else tsr)
+              (if is_tracked_l then Tacset.empty else tsl)
+              (if is_tracked_r then Tacset.empty else tsr)
   end
 
 module Setack(H : Hol_kernel) : Acc_map with type k = H.thm =
