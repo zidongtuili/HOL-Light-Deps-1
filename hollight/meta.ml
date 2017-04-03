@@ -315,12 +315,12 @@ let mk_meta get_src_tactics store_id thm_id thm =
     match find_thm_src modules ident with
     | Some meta -> Identmap.add (modules,ident) meta ident_map
     | None -> ident_map in
-  let trees = !rhs_tree in
+  let trees = !rhs_trees in
   let dep_src_thms = List.fold_left (fold_ident_expr f) Identmap.empty trees
                      |> Identmap.to_list
                      |> map snd in
   let src = register_thm_ident qualifiers ident vd ([],thm) in
-  let rhs = List.nth !rhs_tree store_id in
+  let rhs = List.nth !rhs_trees store_id in
   let dep_src_tacs = get_src_tactics rhs in
   meta_of_thm thm_id thm src Meta.Toplevel dep_src_thms dep_src_tacs
 

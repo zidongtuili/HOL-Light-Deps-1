@@ -20,7 +20,7 @@ and get_constr_of_desc = function
      [post_setup] [i] x
 *)
 let id_vd_store = ref [];;
-let rhs_tree = ref [];;
+let rhs_trees = ref [];;
 let rec transform_item
           qualifiers setup_id teardown_id rec_flag bnds env wrap_init post_setup =
   let module T = Typedtree in
@@ -128,14 +128,13 @@ let rec transform_item
                                         false))
              list_ty in
   let mk_list args = List.fold_right mk_cons args nil_exp in
-  let item_desc = T.Tstr_value (rec_flag,bnds) in
-  let item =
-    {
-      T.str_desc = item_desc;
-      T.str_loc = Location.none;
-      T.str_env = env
-    } in
-  let ids = Translmod.defined_idents [item] in
+  let ids = T.let_bound_idents bnds in
+  let rhs_trees' =
+    List.fold_left (fun rhss (pat,rhs) ->
+                    let ids = T.pat_bound_idents pat in
+                    List.fold_left (fun rhss _ -> rhs :: rhss) rhss ids)
+                   [] bnds in
+  rhs_trees := !rhs_trees @ List.rev rhs_trees';
   let vds = List.map (fun id -> let p = Path.Pident id in
                                 let vd = Env.find_value p env in
                                 vd) ids in
@@ -250,7 +249,6 @@ let rec transform_item
   let pid_vds =
     List.map (fun (id,vid) -> (List.rev qualifiers,id),vid) id_vds in
   id_vd_store := !id_vd_store @ pid_vds;
-  rhs_tree := List.map snd bnds;
   let tuple_ty = mk_tuple_ty (List.map snd id_vds) in
   let wrap_bnds rest ty =
     let id_vd_iexps = mk_id_vd_iexps id_vds_fresh in
@@ -338,6 +336,7 @@ let rec transform_item
 
 let transform_str setup_id teardown_id wrap_init post_setup =
   id_vd_store := [];
+  rhs_trees := [];
   let rec transform_str qualifiers str =
     let module T = Typedtree in
     let transform_item item =
