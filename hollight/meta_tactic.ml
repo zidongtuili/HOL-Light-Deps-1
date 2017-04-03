@@ -57,25 +57,25 @@ let collect_tactics tree =
             | Typedtree.Texp_apply (f_exp,xs) ->
                (match f_exp.Typedtree.exp_desc with
                 | Typedtree.Texp_ident (p,_,_) ->
-                   match resolve_path p with
-                   | None -> ()
-                   | Some (modules,ident) ->
-                      (match find_tactic_src modules ident with
-                       | Some tac_meta ->
-                          let f ident_map modules id =
-                            match find_thm_src modules id with
+                   (match resolve_path p with
+                    | None -> ()
+                    | Some (modules,ident) ->
+                       (match find_tactic_src modules ident with
+                        | Some tac_meta ->
+                           let f ident_map modules id =
+                             match find_thm_src modules id with
                             | Some thm_meta ->
                                Identmap.add (modules,id) thm_meta ident_map
                             | None -> ident_map in
-                          let g b = function
-                            | _,Some exp,_ -> fold_ident_expr f b exp
-                            | _ -> b in
-                          let thms = List.fold_left g Identmap.empty xs
-                                     |> Identmap.to_list
-                                     |> List.map snd in
-                          tacs := (tac_meta, thms) :: !tacs
-                       | None -> ())
-                   | _ -> ())
+                           let g b = function
+                             | _,Some exp,_ -> fold_ident_expr f b exp
+                             | _ -> b in
+                           let thms = List.fold_left g Identmap.empty xs
+                                      |> Identmap.to_list
+                                      |> List.map snd in
+                           tacs := (tac_meta, thms) :: !tacs
+                       | None -> ()))
+                | _ -> ())
             | Typedtree.Texp_ident (p,_,_) ->
                (match resolve_path p with
                 | Some (modules,ident) ->
