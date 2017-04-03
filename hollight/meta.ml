@@ -309,7 +309,7 @@ let register_thm_meta, get_thm_metas =
   (fun thm meta -> thms := (thm,meta) :: !thms),
   fun () -> rev !thms;;
 
-let hook get_src_tactics store_id thm_id thm =
+let mk_meta get_src_tactics store_id thm_id thm =
   let (qualifiers,ident),vd = List.nth !id_vd_store store_id in
   let f ident_map modules ident =
     match find_thm_src modules ident with
@@ -322,38 +322,21 @@ let hook get_src_tactics store_id thm_id thm =
   let src = register_thm_ident qualifiers ident vd ([],thm) in
   let rhs = List.nth !rhs_tree store_id in
   let dep_src_tacs = get_src_tactics rhs in
-  let meta = meta_of_thm thm_id thm src Meta.Toplevel dep_src_thms dep_src_tacs in
-  register_thm_meta thm meta
+  meta_of_thm thm_id thm src Meta.Toplevel dep_src_thms dep_src_tacs
 
-let (with_tracking_nodup_of_hook :
-       (int -> int -> thm -> unit) -> int -> thm -> thm) =
-  fun hook store_id thm ->
-  match Batoption.map get_tracking (get_dep_info thm) with
-  | Some (Tracked _) -> thm
-  | _ ->
-     match get_trivial_duplicates thm with
-     | [] -> let thm_id,thm = with_tracking thm in
-             let () = hook store_id thm_id thm in
-             thm
-     | [_,thm] -> thm
-     | _ -> failwith "Theorem has two duplicates in its dependency graph."
+let mk_tracked_thm_of_get_tactics get_src_tactics store_id thm =
+  match get_trivial_duplicates thm with
+  | [] -> let thm_id,thm = with_tracking thm in
+          let meta = mk_meta get_src_tactics store_id thm_id thm in
+          register_thm_meta thm meta;
+          thm
+  | [_,thm] -> thm
+  | _ -> failwith "Theorem has two duplicates in its dependency graph."
 
-let with_tracking_nodup = with_tracking_nodup_of_hook (hook (K []))
+let mk_tracked_thm = mk_tracked_thm_of_get_tactics (K [])
 
-let thm_setup_of_tactics get_src_tactics thm_store_ids =
-  let thm_hooks =
-    Batlist.filter_map (fun (thm,store_id) ->
-                        let _,vd = List.nth !id_vd_store store_id in
-                        if is_thm_vd vd then
-                          match get_trivial_duplicates thm with
-                          | [] -> Some (thm,hook get_src_tactics store_id)
-                          | [thm,id] -> None
-                          | _ -> failwith "Theorem has two duplicates in its dependency graph."
-                        else None)
-                       thm_store_ids in
-  auto_identify thm_hooks;;
-
-let thm_setup = thm_setup_of_tactics (K []);;
+let thm_setup thm_store_ids =
+  auto_identify (map (fun (thm,_) -> thm,fun _ _ -> ()) thm_store_ids)
 
 let thm_teardown () = auto_identify [];;
 
@@ -365,8 +348,7 @@ Toploop.set_str_transformer
      transform_str "thm_setup" "thm_teardown"
                    (K None)
                    (fun ty ->
-                    if is_thm_ty ty then
-                      Some "with_tracking_nodup"
+                    if is_thm_ty ty then Some "mk_tracked_thm"
                     else None)
                    str, ()
    with exn -> exns := exn :: !exns; str,());;

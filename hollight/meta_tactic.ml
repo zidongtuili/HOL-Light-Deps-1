@@ -87,9 +87,7 @@ let collect_tactics tree =
         end) in
   Find_tactics.iter_expression tree; !tacs;;
 
-let with_tracking_nodup = with_tracking_nodup_of_hook (hook collect_tactics)
-
-let thm_setup = thm_setup_of_tactics collect_tactics
+let mk_tracked_thm = mk_tracked_thm_of_get_tactics collect_tactics
 
 let list_type_path =
   !Toploop.toplevel_env
@@ -136,7 +134,7 @@ Toploop.set_str_transformer
                     else None)
                    (fun ty ->
                     if is_thm_ty ty then
-                      Some "with_tracking_nodup"
+                      Some "mk_tracked_thm"
                     else None)
                    str, ()
    with exn -> exns := exn :: !exns; str,());;
