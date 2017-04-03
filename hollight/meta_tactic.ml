@@ -98,7 +98,7 @@ let collect_tactics tree =
   |> Tacset.to_list
   |> map (fun (tac,thms) -> tac,Identmap.to_list thms |> map snd)
 
-let mk_tracked_thm = mk_tracked_thm_of_get_tactics collect_tactics
+let mk_tracked_thm = mk_tracked_thm_of_get_src_tactics collect_tactics
 
 let list_type_path =
   !Toploop.toplevel_env

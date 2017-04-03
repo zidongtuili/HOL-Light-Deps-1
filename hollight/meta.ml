@@ -309,7 +309,7 @@ let register_thm_meta, get_thm_metas =
   (fun thm meta -> thms := (thm,meta) :: !thms),
   fun () -> rev !thms;;
 
-let mk_meta get_src_tactics store_id thm_id thm =
+let mk_meta get_src_tactics store_id thm_id thm thm_origin =
   let (qualifiers,ident),vd = List.nth !id_vd_store store_id in
   let f ident_map modules ident =
     match find_thm_src modules ident with
@@ -322,18 +322,38 @@ let mk_meta get_src_tactics store_id thm_id thm =
   let src = register_thm_ident qualifiers ident vd ([],thm) in
   let rhs = List.nth !rhs_trees store_id in
   let dep_src_tacs = get_src_tactics rhs in
-  meta_of_thm thm_id thm src Meta.Toplevel dep_src_thms dep_src_tacs
+  meta_of_thm thm_id thm src thm_origin dep_src_thms dep_src_tacs
 
-let mk_tracked_thm_of_get_tactics get_src_tactics store_id thm =
-  match get_trivial_duplicates thm with
-  | [] -> let thm_id,thm = with_tracking thm in
-          let meta = mk_meta get_src_tactics store_id thm_id thm in
-          register_thm_meta thm meta;
-          thm
-  | [_,thm] -> thm
-  | _ -> failwith "Theorem has two duplicates in its dependency graph."
+let mk_tracked_thm_of_splitter split get_src_tactics store_id thm =
+  let thm,id_thms_new = split thm in
+  let id_thm (id,thm,_) = id,thm in
+  let () =
+    match id_thms_new with
+    | [thm_id,thm,is_new] ->
+       if is_new then
+         let meta = mk_meta get_src_tactics store_id thm_id thm Meta.Toplevel in
+         register_thm_meta thm meta
+    | idthms ->
+       Batlist.iter
+         (fun ((thm_id,c,is_new),index) ->
+          if is_new then
+            let thm_origin = Meta.Conjunct index in
+            let meta =
+              mk_meta get_src_tactics store_id thm_id c thm_origin in
+            register_thm_meta c meta)
+         (zip_with_index idthms) in
+  thm
 
-let mk_tracked_thm = mk_tracked_thm_of_get_tactics (K [])
+let mk_tracked_thm_of_get_src_tactics =
+  let split thm =
+    match get_trivial_duplicates thm with
+    | [] -> let thm_id,thm = with_tracking thm in
+            thm,[thm_id,thm,true]
+    | [_,thm] -> thm,[]
+    | _ -> failwith "Theorem has two duplicates in its dependency graph." in
+  mk_tracked_thm_of_splitter split
+
+let mk_tracked_thm = mk_tracked_thm_of_get_src_tactics (K [])
 
 let thm_setup thm_store_ids =
   auto_identify (map (fun (thm,_) -> thm,fun _ _ -> ()) thm_store_ids)

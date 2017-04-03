@@ -13,7 +13,7 @@ needs "tactics.ml";;
 (* Accept a theorem modulo unification.                                      *)
 (* ------------------------------------------------------------------------- *)
 
-let restore_hook = install_renaming_tactic_boxer ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC;;
 
 let UNIFY_ACCEPT_TAC mvs th (asl,w) =
   let insts = term_unify mvs (concl th) w in
@@ -21,7 +21,7 @@ let UNIFY_ACCEPT_TAC mvs th (asl,w) =
                let th' = INSTANTIATE insts th in
                fun i [] -> INSTANTIATE i th');;
 
-restore_hook ();;
+let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
 (* ------------------------------------------------------------------------- *)
 (* The actual prover, as a tactic.                                           *)

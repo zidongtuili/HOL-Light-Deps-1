@@ -1,5 +1,7 @@
-let zip_with_index f xs =
+let map_with_index f xs =
   List.rev (snd (List.fold_left (fun (n,xs) x -> (n+1,f x n :: xs)) (0,[]) xs));;
+
+let zip_with_index xs = map_with_index (fun i n -> (i,n)) xs;;
 
 let rec get_constr t = get_constr_of_desc t.Types.desc
 and get_constr_of_desc = function
@@ -241,7 +243,7 @@ let rec transform_item
        anon_exp tuple_exp_desc tuple_ty in
   let store_length = List.length !id_vd_store in
   let mk_id_vd_iexps id_vds =
-    zip_with_index (fun (id,vd) i ->
+    map_with_index (fun (id,vd) i ->
                     let i = i + store_length in
                     let iexp =
                       anon_exp (T.Texp_constant (Asttypes.Const_int i)) int_ty in
