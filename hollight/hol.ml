@@ -195,7 +195,8 @@ module Setack_noasm(H : Hol_kernel) : Acc_map with type k = H.thm =
   end
 
 module Hol_cert = Hol;;
-module Hol = Record_hol_kernel(Hol_cert)(Setack_noasm(Hol_cert))(Tracking);;
+module Acc = Setack_noasm(Hol_cert);;
+module Hol = Record_hol_kernel(Hol_cert)(Acc)(Tracking);;
 include Hol;;
 let compare = Pervasives.compare;;
 

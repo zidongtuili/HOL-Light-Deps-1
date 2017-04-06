@@ -1,5 +1,9 @@
 (*needs "meta_tactic.ml"*)
 
+let thm_setup thm_store_ids =
+  auto_identify_thms
+    (Batlist.(>>=) thm_store_ids (fun (thm,id) -> CONJUNCTS thm));;
+
 let mk_tracked_thm =
   let split thm =
     let (asl,c) = dest_thm thm in

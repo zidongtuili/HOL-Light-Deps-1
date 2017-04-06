@@ -37,7 +37,7 @@ module type Recording_hol_kernel =
 
     val dep_info_of_id : int -> dep_info
 
-    val auto_identify : (thm * (int -> thm -> unit)) list -> unit
+    val auto_identify : (thm -> (int -> thm -> unit) option) -> unit
     val with_tracking : thm -> int * thm
 
     (** The dependencies of a theorem. *)
@@ -138,13 +138,9 @@ module Record_hol_kernel : Recording_hol_kernel =
       | Record(_,_,Some (Identified n),_,_,_) -> Some n
       | _ -> None
 
-    let (autos : (int -> thm -> unit) Acc.t ref) = ref Acc.empty
+    let (auto_track : (thm -> (int -> thm -> unit) option) ref) = ref (fun _ -> None)
     let tracking_hook = ref (fun _ _ -> ())
-    let auto_identify thms =
-      autos := List.fold_left
-                 (fun acc (thm,f) -> Acc.modify I (thm_cert thm) f acc)
-                 Acc.empty
-                 thms
+    let auto_identify thmp = auto_track := thmp
 
     let thm_id_counter = ref 0
 
@@ -187,9 +183,8 @@ module Record_hol_kernel : Recording_hol_kernel =
          thm
       | None ->
          let thm = Record(cert,deps,None,constdeps,typedeps,meta) in
-         match Acc.find cert !autos with
-         | Some f ->
-            let i,thm = with_tracking thm in f i thm; thm
+         match !auto_track thm with
+         | Some f -> let i,thm = with_tracking thm in f i thm; thm
          | None -> thm
 
     let record0 cert =

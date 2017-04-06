@@ -355,10 +355,17 @@ let mk_tracked_thm_of_get_src_tactics =
 
 let mk_tracked_thm = mk_tracked_thm_of_get_src_tactics (K [])
 
-let thm_setup thm_store_ids =
-  auto_identify (map (fun (thm,_) -> thm,fun _ _ -> ()) thm_store_ids)
+let (auto_identify_thms : thm list -> unit) = fun thms ->
+  let f _ _ = () in
+  let acc = List.fold_left (fun acc thm -> Acc.modify I (thm_cert thm) f acc)
+                           Acc.empty
+                           thms in
+  auto_identify (fun thm -> Acc.find (thm_cert thm) acc);;
 
-let thm_teardown () = auto_identify [];;
+let (thm_setup : (thm * int) list -> unit) = fun thm_store_ids ->
+  auto_identify_thms (map fst thm_store_ids);;
+
+let thm_teardown () = auto_identify (K None);;
 
 Toploop.set_str_transformer
   ()
