@@ -39,7 +39,8 @@ let _FALSITY_ = new_definition `_FALSITY_ = F`;;
 let mk_fthm =
   let pth = UNDISCH(fst(EQ_IMP_RULE _FALSITY_))
   and qth = ASSUME `_FALSITY_` in
-  fun (asl,c) -> PROVE_HYP qth (itlist ADD_ASSUM (rev asl) (CONTR c pth));;
+  fun (asl,c) -> PROVE_HYP qth (itlist ADD_ASSUM (rev asl) (CONTR c pth)),
+                 Rose ([],[]);;
 
 (* ------------------------------------------------------------------------- *)
 (* Validity checking of tactics. This cannot be 100% accurate without making *)
@@ -52,9 +53,9 @@ let (VALID:tactic->tactic) =
     mk_fthm(asms,w)
   and false_tm = `_FALSITY_` in
   fun tac (asl,w) ->
-    let ((mvs,i),gls,just,_ as res) = tac (asl,w) in
+    let ((mvs,i),gls,just as res) = tac (asl,w) in
     let ths = map fake_thm gls in
-    let asl',w' = dest_thm(just null_inst ths) in
+    let asl',w' = dest_thm(fst(just null_inst ths)) in
     let asl'',w'' = inst_goal i (asl,w) in
     let maxasms =
       itlist (fun (_,th) -> union (insert (concl th) (hyp th))) asl'' [] in
@@ -68,81 +69,77 @@ let (VALID:tactic->tactic) =
 
 let (THEN),(THENL) =
   let propagate_empty i [] = []
-  and propagate_thm th i [] = INSTANTIATE_ALL i th in
+  and propagate_thm (th,tac) i [] = INSTANTIATE_ALL i th, tac in
   let compose_justs n just1 just2 i ths =
     let ths1,ths2 = chop_list n ths in
     (just1 i ths1)::(just2 i ths2) in
   let rec seqapply l1 l2 = match (l1,l2) with
-     ([],[]) -> null_meta,[],propagate_empty,[]
+     ([],[]) -> null_meta,[],propagate_empty
    | ((tac:tactic)::tacs),((goal:goal)::goals) ->
-            let ((mvs1,insts1),gls1,just1,rosebud) = tac goal in
+            let ((mvs1,insts1),gls1,just1) = tac goal in
             let goals' = map (inst_goal insts1) goals in
-            let ((mvs2,insts2),gls2,just2,rosebuds) = seqapply tacs goals' in
-            (union mvs1 mvs2,compose_insts insts1 insts2),
-            gls1@gls2,
-            compose_justs (length gls1) just1 just2,
-            rosebud::rosebuds
+            let ((mvs2,insts2),gls2,just2) = seqapply tacs goals' in
+            ((union mvs1 mvs2,compose_insts insts1 insts2),
+             gls1@gls2,compose_justs (length gls1) just1 just2)
    | _,_ -> failwith "seqapply: Length mismatch" in
   let justsequence just1 just2 insts2 i ths =
     just1 (compose_insts insts2 i) (just2 i ths) in
-  let tacsequence ((mvs1,insts1),gls1,just1,rosebud) tacl =
-    let ((mvs2,insts2),gls2,just2,rosebuds) = seqapply tacl gls1 in
+  let tacsequence ((mvs1,insts1),gls1,just1) tacl =
+    let ((mvs2,insts2),gls2,just2) = seqapply tacl gls1 in
     let jst = justsequence just1 just2 insts2 in
     let just = if gls2 = [] then propagate_thm (jst null_inst []) else jst in
-    (union mvs1 mvs2,compose_insts insts1 insts2),
-    gls2,
-    just,
-    (* To do: if necessary, inline this into seqapply *)
-    seqbuds rosebud rosebuds in
+    ((union mvs1 mvs2,compose_insts insts1 insts2),gls2,just) in
   let (then_: tactic -> tactic -> tactic) =
     fun tac1 tac2 g ->
-      let _,gls,_,_ as gstate = tac1 g in
+      let _,gls,_ as gstate = tac1 g in
       tacsequence gstate (replicate tac2 (length gls))
   and (thenl_: tactic -> tactic list -> tactic) =
     fun tac1 tac2l g ->
-      let _,gls,_,_ as gstate = tac1 g in
+      let _,gls,_ as gstate = tac1 g in
       if gls = [] then tacsequence gstate []
       else tacsequence gstate tac2l in
   then_,thenl_;;
 
-let rose_of_thm th =
-  Some (Batoption.bind (get_dep_info th)
-                       ((function
-                          | Tracked id -> Some (Tracked_thm id)
-                          | _ -> None) o get_tracking)
-        |> Batoption.default (Concl (concl th)));;
+let tac_thm_of_thm th =
+  Batoption.bind (get_dep_info th)
+                 ((function
+                    | Tracked id -> Some (Tracked_thm id)
+                    | _ -> None) o get_tracking)
+  |> Batoption.default (Concl (concl th));;
 
 let (add_rose : unit Meta.srced -> thm list
-                -> (term list * instantiation) * goal list * justification
-                -> goalstate) = fun name ths gstate ->
-  let inst,gls,j = gstate in
-  inst,gls,j,rose_split (length gls) [name,Batlist.filter_map rose_of_thm ths];;
+                -> (term list * instantiation) * goal list *
+                     (instantiation -> thm list -> thm)
+                -> goalstate) = fun name ths (inst,gls,j) ->
+  inst,gls,fun i th_tacs ->
+           let ths,tacs = List.split th_tacs in
+           j i ths,Rose ([name,map tac_thm_of_thm ths],tacs);;
 
-let (simple_rose : (term list * instantiation) * goal list * justification
-                   -> goalstate) = fun gstate ->
-  let inst,gls,j = gstate in
-  inst,gls,j,rose_split (length gls) [];;
+let (simple_rose : (term list * instantiation) * goal list *
+                     (instantiation -> thm list -> thm)
+                   -> goalstate) = fun (inst,gls,j) ->
+  inst,gls,fun i th_tacs ->
+           let ths,tacs = List.split th_tacs in
+           j i ths,Rose ([],tacs);;
 
 let (BOX_TAC : unit Meta.srced -> thm list -> tactic -> tactic) =
   fun src ths tac g ->
-  let ths = Batlist.filter_map rose_of_thm ths in
-  let inst,gls,j,rose_bud = tac g in
-  let rose_bud =
-    Rose_bud (fun trees -> let Rose(tacs,subtrees),trees = bloom rose_bud trees in
-                           Rose(((src,ths) :: tacs), subtrees),trees) in
-  inst,gls,j,rose_bud;;
+  let ths = map tac_thm_of_thm ths in
+  let inst,gls,j = tac g in
+  inst,gls,fun i th_tacs ->
+           let th,Rose(tacs,trees) = j i th_tacs in
+           th,Rose ([src,ths],trees);;
 
 let (RENAME_BOX_TAC : unit Meta.srced -> thm list -> tactic -> tactic) =
   fun src ths tac g ->
-  let ths = Batlist.filter_map rose_of_thm ths in
-  let inst,gls,j,rose_bud = tac g in
+  let ths = Batlist.map tac_thm_of_thm ths in
+  let inst,gls,j = tac g in
   let rename = function
     | [] -> [src,ths]
     | _ :: tacs -> (src,ths) :: tacs in
-  let rose_bud =
-    Rose_bud (fun trees -> let Rose(tacs,subtrees),trees = bloom rose_bud trees in
-                           Rose(rename tacs, subtrees),trees) in
-  inst,gls,j,rose_bud;;
+  inst,gls,fun i th_tacs ->
+           let th,Rose(tacs,trees) = j i th_tacs in
+           th,Rose (rename tacs,trees);;
 
 let null_src =
   {
@@ -198,7 +195,7 @@ let MAP_FIRST tacf lst =
 
 let (CHANGED_TAC: tactic -> tactic) =
   fun tac g ->
-    let (meta,gl,_,_ as gstate) = tac g in
+    let (meta,gl,_ as gstate) = tac g in
     if meta = null_meta && length gl = 1 && equals_goal (hd gl) g
     then failwith "CHANGED_TAC" else gstate;;
 
@@ -645,12 +642,13 @@ let (TRANS_TAC:thm->term->tactic) =
 let (CONJUNCTS_THEN2:thm_tactic->thm_tactic->thm_tactic) =
   fun ttac1 ttac2 cth ->
       let c1,c2 = dest_conj(concl cth) in
-      fun gl -> let ti,gls,jfn,rosebud =
+      fun gl -> let ti,gls,jfn =
                   (ttac1(ASSUME c1) THEN ttac2(ASSUME c2)) gl in
                 let jfn' i ths =
                   let th1,th2 = CONJ_PAIR(INSTANTIATE_ALL i cth) in
-                  PROVE_HYP th1 (PROVE_HYP th2 (jfn i ths)) in
-                ti,gls,jfn',rosebud;;
+                  let jthm,tac = jfn i ths in
+                  PROVE_HYP th1 (PROVE_HYP th2 jthm),tac in
+                ti,gls,jfn';;
 
 let (CONJUNCTS_THEN: thm_tactical) =
   W CONJUNCTS_THEN2;;
@@ -732,13 +730,13 @@ let (box_tactic : int -> Obj.t -> Obj.t) = box_magically RENAME_BOX_TAC;;
 
 let (SUBGOAL_THEN: term -> thm_tactic -> tactic) =
   fun wa ttac (asl,w) ->
-  let meta,gl,just,rosebud = ttac (ASSUME wa) (asl,w) in
+  let meta,gl,just = ttac (ASSUME wa) (asl,w) in
   meta,
   (asl,wa)::gl,
-  (fun i l -> PROVE_HYP (hd l) (just i (tl l))),
-  Rose_bud (fun rose::roses ->
-            let rose',roses' = bloom rosebud roses in
-            Rose ([null_src,[]],[rose;rose']), roses');;
+  (fun i ((th,tac)::tl) ->
+   let jthm,tac' = just i tl in
+   PROVE_HYP th jthm,
+   Rose ([],[tac;tac']));;
 
 let (box_tactic : int -> Obj.t -> Obj.t) = box_magically BOX_TAC;;
 
@@ -750,8 +748,9 @@ let SUBGOAL_TAC s tm prfs =
 
 let (FREEZE_THEN :thm_tactical) =
   fun ttac th (asl,w) ->
-    let meta,gl,just,rosebud = ttac (ASSUME(concl th)) (asl,w) in
-    meta,gl,(fun i l -> PROVE_HYP th (just i l)),rosebud;;
+    let meta,gl,just = ttac (ASSUME(concl th)) (asl,w) in
+    meta,gl,(fun i l -> let jthm,tac = just i l in
+                        PROVE_HYP th jthm,tac);;
 
 (* ------------------------------------------------------------------------- *)
 (* Metavariable tactics.                                                     *)
@@ -840,7 +839,7 @@ let (print_goal:goal->unit) =
 
 let (print_goalstack:goalstack->unit) =
   let print_goalstate k gs =
-    let (_,gl,_,_) = gs in
+    let (_,gl,_) = gs in
     let n = length gl in
     let s = if n = 0 then "No subgoals" else
               (string_of_int k)^" subgoal"^(if k > 1 then "s" else "")
@@ -851,11 +850,11 @@ let (print_goalstack:goalstack->unit) =
   fun l ->
     if l = [] then Format.print_string "Empty goalstack"
     else if tl l = [] then
-      let (_,gl,_,_ as gs) = hd l in
+      let (_,gl,_ as gs) = hd l in
       print_goalstate 1 gs
     else
-      let (_,gl,_,_ as gs) = hd l
-      and (_,gl0,_,_) = hd(tl l) in
+      let (_,gl,_ as gs) = hd l
+      and (_,gl0,_) = hd(tl l) in
       let p = length gl - length gl0 in
       let p' = if p < 1 then 1 else p + 1 in
       print_goalstate p' gs;;
@@ -865,11 +864,11 @@ let (print_goalstack:goalstack->unit) =
 (* ------------------------------------------------------------------------- *)
 
 let (by:tactic->refinement) =
-  fun tac ((mvs,inst),gls,just,rosebud) ->
+  fun tac ((mvs,inst),gls,just) ->
     if gls = [] then failwith "No goal set" else
     let g = hd gls
     and ogls = tl gls in
-    let ((newmvs,newinst),subgls,subjust,subrosebud) = tac g in
+    let ((newmvs,newinst),subgls,subjust) = tac g in
     let n = length subgls in
     let mvs' = union newmvs mvs
     and inst' = compose_insts inst newinst
@@ -879,27 +878,25 @@ let (by:tactic->refinement) =
       let cths,oths = chop_list n ths in
       let sths = (subjust i cths) :: oths in
       just i' sths in
-    let rosebud' = Rose_bud (fun roses -> let rose,roses = bloom subrosebud roses in
-                                          bloom rosebud (rose::roses)) in
-    (mvs',inst'),gls',just',rosebud';;
+    (mvs',inst'),gls',just';;
 
 (* ------------------------------------------------------------------------- *)
 (* Rotate the goalstate either way.                                          *)
 (* ------------------------------------------------------------------------- *)
 
 let (rotate:int->refinement) =
-  let rotate_p (meta,sgs,just,rosebud) =
+  let rotate_p (meta,sgs,just) =
     let sgs' = (tl sgs)@[hd sgs] in
     let just' i ths =
       let ths' = (last ths)::(butlast ths) in
       just i ths' in
-    (meta,sgs',just',rotate_bud_p rosebud)
-  and rotate_n (meta,sgs,just,rosebud) =
+    (meta,sgs',just')
+  and rotate_n (meta,sgs,just) =
     let sgs' = (last sgs)::(butlast sgs) in
     let just' i ths =
       let ths' = (tl ths)@[hd ths] in
       just i ths' in
-    (meta,sgs',just',rotate_bud_n rosebud) in
+    (meta,sgs',just') in
   fun n -> if n > 0 then funpow n rotate_p
            else funpow (-n) rotate_n;;
 
@@ -912,18 +909,16 @@ let (mk_goalstate:goal->goalstate) =
     if type_of w = bool_ty then
       null_meta,
       [asl,w],
-      (fun inst [th] -> INSTANTIATE_ALL inst th),
-      Rose_bud (fun (rose::roses) -> rose,roses)
+      (fun inst [th,tac] -> INSTANTIATE_ALL inst th,tac)
     else failwith "mk_goalstate: Non-boolean goal";;
 
 let (TAC_PROOF : goal * tactic -> thm) =
   fun (g,tac) ->
     let gstate = mk_goalstate g in
-    let _,sgs,just,rose_bud = by tac gstate in
-    if sgs = [] then let th = just null_inst [] in
-                     let rose,_ = bloom rose_bud [] in
+    let _,sgs,just = by tac gstate in
+    if sgs = [] then let th,tac = just null_inst [] in
                      modify_meta (fun (is_tracked,_) ->
-                                  is_tracked,Tacset.singleton rose) th
+                                  is_tracked,Tacset.singleton tac) th
     else failwith "TAC_PROOF: Unsolved goals";;
 
 let prove(t,tac) =
@@ -979,7 +974,7 @@ let p() =
   !current_goalstack;;
 
 let top_realgoal() =
-  let (_,((asl,w)::_),_,_)::_ = !current_goalstack in
+  let (_,((asl,w)::_),_)::_ = !current_goalstack in
   asl,w;;
 
 let top_goal() =
@@ -987,12 +982,8 @@ let top_goal() =
   map (concl o snd) asl,w;;
 
 let top_thm() =
-  let (_,[],f,_)::_ = !current_goalstack in
+  let (_,[],f)::_ = !current_goalstack in
   f null_inst [];;
-
-let top_tree() =
-  let (_,[],_,rosebud)::_ = !current_goalstack in
-  fst (bloom rosebud []);;
 
 (* ------------------------------------------------------------------------- *)
 (* Install the goal-related printers.                                        *)

@@ -34,18 +34,17 @@ let equals_goal ((a,w):goal) ((a',w'):goal) =
 (*                                                                           *)
 (*   f(@) [A1@ |- g1@; ...; An@ |- gn@] = A@ |- g@                           *)
 (* ------------------------------------------------------------------------- *)
-type justification = instantiation -> thm list -> thm;;
+type tac_tree = (unit Meta.srced * tac_thm list) list rose_tree;;
+type justification = instantiation -> (thm * tac_tree) list -> thm * tac_tree;;
 
 (* ------------------------------------------------------------------------- *)
 (* The goalstate stores the subgoals, justification, current instantiation,  *)
-(* a list of metavariables. and a recording of the current tactics used in a *)
-(* rose tree with holes.                                                     *)
+(* and a list of metavariables.                                              *)
 (* ------------------------------------------------------------------------- *)
 
 type goalstate = (term list * instantiation)
                  * goal list
-                 * justification
-                 * (unit Meta.srced * tac_thm list) list rose_bud;;
+                 * justification;;
 
 (* ------------------------------------------------------------------------- *)
 (* A goalstack is just a list of goalstates. Could go for more...            *)
@@ -69,7 +68,6 @@ type refinement = goalstate -> goalstate;;
 (*  o A list of subgoals                                                     *)
 (*  o A justification f such that for any instantiation @ we have            *)
 (*    f(@) [A1@  |- g1@; ...; An@ |- gn@] = A(%;@) |- g(%;@)                 *)
-(*  o A rose tree of the component tactics used with holes for later tactics *)
 (* ------------------------------------------------------------------------- *)
 
 type tactic = goal -> goalstate;;
