@@ -83,7 +83,7 @@ module Record_hol_kernel : Recording_hol_kernel =
        and Depset : Batset.S with type elt = Dep.t = Batset.Make(Dep)
        and Thmrec : sig
            type dep_info = Identified of int
-                         | Duplicate_of of thm Intmap.t * int
+                         | Duplicate_of of thm Intmap.t
            and thm = Record of Hol_cert.thm * Depset.t * dep_info option *
                                Stringset.t * Stringset.t * Meta.t
            val thm_cert : thm -> Hol_cert.thm
@@ -93,25 +93,26 @@ module Record_hol_kernel : Recording_hol_kernel =
            val dep_info_of_id : int -> dep_info
          end =
          struct
-           type dep_info = Identified of int | Duplicate_of of thm Intmap.t * int
+           type dep_info = Identified of int | Duplicate_of of thm Intmap.t
             and thm = Record of Hol_cert.thm * Depset.t * dep_info option *
                                 Stringset.t * Stringset.t * Meta.t
            let thm_cert (Record(cert,_,_,_,_,_)) = cert
            let get_tracking = function
              | Identified id -> Tracked id
-             | Duplicate_of (ids,_) ->
+             | Duplicate_of ids ->
                 Duplicate (Batenum.fold (fun xs x -> x :: xs) [] (Intmap.keys ids))
            let get_dep_info (Record(_,_,dep_info,_,_,_)) = dep_info
            let dep_info_of_id id = Identified id
            let is_dep_of id = function
              | Identified id' -> id = id'
-             | Duplicate_of (ids,_) -> Intmap.mem id ids
+             | Duplicate_of ids -> Intmap.mem id ids
            let compare_dep_info d1 d2 =
              match d1,d2 with
              | Identified i1, Identified i2 -> compare i1 i2
              | Identified _, _ -> -1
              | _, Identified _ -> 1
-             | Duplicate_of (_,i1), Duplicate_of (_,i2) -> compare i1 i2
+             | Duplicate_of is1, Duplicate_of is2 ->
+                Intmap.compare (fun _ _ -> 0) is1 is2
            let compare_on_tracking thm1 thm2 =
              match thm1,thm2 with
              | Record (cert1,_,Some dinfo1,_,_,_),
@@ -167,19 +168,16 @@ module Record_hol_kernel : Recording_hol_kernel =
                        |> Intmap.enum |> Batenum.fold (fun xs x -> x :: xs) []
       | None -> []
 
-    let dup_id_counter = ref 0
     let record cert deps constdeps typedeps meta =
       match Acc.find cert !ack_certs with
       | Some idthms ->
-         let dup_id = !dup_id_counter in
          let idthms' =
            Intmap.filterv (Acc.is_subsumed_by cert o thm_cert) idthms in
          let thm =
            if Intmap.is_empty idthms'
            then Record(cert,deps,None,constdeps,typedeps,meta)
-           else Record(cert,deps,Some (Duplicate_of (idthms',dup_id)),
+           else Record(cert,deps,Some (Duplicate_of idthms'),
                        constdeps,typedeps,meta) in
-         incr dup_id_counter;
          thm
       | None ->
          let thm = Record(cert,deps,None,constdeps,typedeps,meta) in
