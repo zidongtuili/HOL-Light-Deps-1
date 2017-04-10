@@ -44,3 +44,19 @@ let (rose_split : int -> 'a -> 'a rose_bud) =
   fun n x -> Rose_bud (fun roses ->
                        let roses,roses' = chop_list n roses in
                        Rose (x,roses), roses');;
+
+let rec (print_rose_tree :
+           (Format.formatter -> 'a -> unit) ->
+           Format.formatter -> 'a rose_tree -> unit) =
+  fun p fmt (Rose (x,xs)) ->
+        match xs with
+        | [] -> Batformat.fprintf fmt "@[%a@]" p x
+        | xs ->
+           Batformat.fprintf
+             fmt
+             "(|@[<hv 2>@[<v>%a@],@,@[<v>%a@]@]|)"
+             p
+             x
+             (Batformat.pp_print_list ~pp_sep:(fun fmt () -> Batformat.fprintf fmt "@,")
+                                      (print_rose_tree p))
+             xs

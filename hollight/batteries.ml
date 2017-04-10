@@ -5,6 +5,7 @@ module Batarray = BatArray
 module Batconcurrent = BatConcurrent
 module Batlist = struct include Monad.MakePlus(Monad.List) include BatList end
 module Batmutex = BatMutex
+module Batformat = BatFormat
 module Batenum = struct
   module App =
     struct
