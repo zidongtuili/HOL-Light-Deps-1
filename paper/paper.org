@@ -1,0 +1,543 @@
+#+TITLE: HOListic: Pervasive Datasets for Theorem Proving
+#+DATE: <2017-04-05 Wed>
+#+OPTIONS: texht:t toc:nil date:nil author:nil
+#+LATEX_CLASS: llncs
+#+LATEX_CLASS_OPTIONS:
+#+LATEX_HEADER: \institute{University of Edinburgh}
+#+LATEX_HEADER: \author{Phil Scott \and Steven Obua \and Jaques Fleuriot}
+#+LATEX_HEADER: \usepackage{upquote}
+#+LATEX_HEADER: \usetikzlibrary{matrix}
+#+LATEX_HEADER_EXTRA:
+#+PROPERTY: bibliography ../proofpeer.bib
+
+#+BEGIN_abstract
+Today's theorem provers boast huge verifications of mathematics and software. But
+hidden in these mechanisations is an even vaster amount of data in the form of the
+proof graphs, proof strategies, theory hierarchies, definitional dependencies,
+etc..., that have been verified to lead to the mechanised theorems.
+
+In this paper, we describe a safe wrapper around the HOL Light kernel which generates
+detailed, reproducible data on all theorems, proofs and tactics created and verified
+by the user which is then available directly at the Ocaml toplevel. No postprocessing
+is required, nor any manual intervention, though the user is given hooks and
+interfaces to customize the level of recorded detail.
+
+Due to the nature of interactive theorem proving, a number of complications arise in
+trying to extract this data, which we will discuss in detail, expecting that our
+solutions may well be of interest to others trying to do the same for other systems.
+#+END_abstract
+
+* Introduction
+
+* Organisation
+
+* Interactivity
+
+To date [citations], significant progress has been made building large datasets for
+HOL\nbsp{}Light, but this typically happens in batch: the kernel is patched with
+instrumentation, a chosen set of theorems are verified by the new kernel, and the
+accumulated data is post-processed and output to disk.
+
+HOListic, by contrast, implements /no/ patching of the kernel and /no/ batch
+post-processing of verified theorems. Metadata is gathered automatically in the live
+system, allowing the user to do their day-to-day work without interference, safe in
+the knowledge that the LCF contract --- the kernel --- has not been tampered with. At any
+time, the user may query for theorem metadata at the toplevel, and can choose how
+they process it or, if they wish, serialise it and ship it off to some other program
+for post-processing.
+
+** Hooks into Ocaml
+   :PROPERTIES:
+   :ID:       b756362e-8f90-429b-99af-6b7110f99026
+   :END:
+
+HOL and HOL\nbsp{}Light users work directly at the Ocaml interpreter, and so our
+chief means of providing instrumentation is to add a set of general purpose hooks
+into the interpreter itself.
+
+#+BEGIN_SRC ocaml
+  type ('s,'t) phrase_hooks =
+    {
+      phrase_parse : Typedtree.structure -> 's -> 't;
+      phrase_ident : Ident.t -> Types.value_description -> 't -> 't;
+      phrase_exit : 't -> 's;
+    }
+#+END_SRC
+
+The =phrase_parse= hook is fired if the interpreter successfully parses a
+toplevel phrase. Next, =phrase_ident= is fired for each new toplevel identifier
+together with a description of the value provided by the Ocaml parser. Finally, an
+exit hook is fired after all new identifiers are processed. Between these phases flow
+state information of type 's and 't.
+
+For instance, we can install a hook which automatically announces when a value of
+type =int= is bound at the toplevel:
+
+#+BEGIN_SRC ocaml
+  let print_val =
+    Printf.printf "int ident %d in phrase %d named %s = %d defined\n"
+
+  let hooks =
+    { phrase_parse = (fun str m -> (m,0));
+      phrase_ident =
+        (fun id vd (m,n) ->
+         match get_constr vd.val_type with
+         | None -> (m,n)
+         | Some (p,_) when p = int_type_path ->
+            let obj = Toploop.getvalue id.Ident.name in
+            let v   = Obj.obj obj in
+            let () = print_val n m id.name v in
+            (m,n + 1)
+         | Some _ -> (m,n));
+      phrase_exit = (fun (m,_) -> m + 1);
+    }
+  in set_phrase_hooks 0 hooks
+#+END_SRC
+
+With this hook installed, we can test it out as follows:
+
+#+BEGIN_SRC text
+  # let x = 100;;
+  int ident 0, phrase 1 named x = 100 defined
+  val x : int = 100
+
+  # let [u;v;w],str = List.map (fun n -> n * 100) [2;3;4],"500";;
+  int ident 0, phrase 2 named v = 300 defined
+  int ident 1, phrase 2 named w = 400 defined
+  int ident 2, phrase 2 named u = 200 defined
+  val u : int = 200
+  val v : int = 300
+  val w : int = 400
+  val str : string = "500"
+#+END_SRC
+
+With appropriate hooks, we can arrange it so that whenever proofs are processed by
+the interpreter or loaded in files, we traverse the parse-tree of the proof
+looking for data, or query every new toplevel identifier introduced by the proof,
+looking up the new theorem in the environment and attaching metadata to it
+directly. We describe the metadata we collect in the next few sections.
+
+* Dependency Tracking
+
+Most work building datasets in HOL\nbsp{}Light has focused on tracking the lemmas
+used to prove theorems, for the purpose of building recommender systems that can
+suggest lemmas that might prove new conjectures that user's propose at the
+toplevel. Impressive tooling has been built around this [citations], and so it would
+be amiss if our dataset did not include it.
+
+** Proof Graphs
+   :PROPERTIES:
+   :ID:       2bd45850-606a-43a3-8cfd-4a58dbaddc5e
+   :END:
+Verified theorems form DAGs with each successor node corresponding to the use of an
+inference rule applied to the predecessors. Existing implementations [cite] record
+these graphs by patching the kernel, but this requires the user to trust the
+patches. We can do better since Ocaml 4.0, where it is possible to use Ocaml functors
+to wrap any kernel and its inference rules, enriching the basic LCF theorem type,
+whilst leaving the underlying theorem intact.
+
+In the interests of space and time efficiency, we do not assume that the user wants
+to record the full proof graph. The principle means of control over recording
+provided by the kernel is the function 
+
+#+BEGIN_SRC ocaml
+  val with_tracking : thm -> int * thm
+#+END_SRC
+
+This takes a theorem and returns a tracked theorem, assigned a unique numeric
+identifier and propagated as a predecessor node through inference rules until another
+tracked node is reached. Alternatively, users can use
+#+BEGIN_SRC ocaml
+  val auto_identify : (thm -> (int -> thm -> unit) option) -> unit
+#+END_SRC
+to optionally track any theorem produced by the kernel, firing a hook with its unique
+numeric identifier and the newly tracked theorem.
+
+In the default setting we provide for HOListic, only theorems available by (possibly
+qualified) toplevel identifiers are tracked by the wrapped kernel.
+
+*** Postprocessing
+    :PROPERTIES:
+    :ID:       c527af20-4415-4428-bdb0-bb20de3117b2
+    :END:
+
+Proofs in HOL\nbsp{}Light typically produce spurious dependency shapes such as
+
+#+BEGIN_LaTeX
+  \begin{tikzpicture}
+    \matrix (m) [matrix of nodes, row sep=1em, column sep=1em]{
+      \colorbox{green}{$P_1$} &   & \colorbox{green}{$P_2$} &            & \colorbox{green}{$Q_1$} &   & \colorbox{green}{$Q_2$} \\
+          & \colorbox{green}{X} &     &            &     & \colorbox{green}{$Y$} &     \\
+          &   &     & \colorbox{green}{$X \wedge Y$} &     &   &     \\
+     \\
+          &   &     &     \colorbox{red}{X}      &     &   &     \\
+          &   &     &     \colorbox{green}{Z}      &     &   &     \\
+    };
+    \draw[->] 
+      (m-1-1) -> (m-2-2);
+    \draw[->] 
+      (m-1-3) -> (m-2-2);
+    \draw[->] 
+      (m-1-5) -> (m-2-6);
+    \draw[->] 
+      (m-1-7) -> (m-2-6);
+    \draw[->] 
+      (m-2-2) -> (m-3-4);
+    \draw[->] 
+      (m-2-6) -> (m-3-4);
+   \draw[dashed,->]
+      (m-3-4) -> (m-5-4);
+   \draw[->]
+      (m-5-4) -> (m-6-4);
+  \end{tikzpicture}
+#+END_LaTeX
+
+Here, we suppose that the nodes in green are top-level theorems that are explicitly
+tracked. The red node is untracked, and so the dependencies on $X \wedge Y$ are
+propagated through to $Z$. 
+
+This scenario is all too common. In HOL\nbsp{}Light, it is standard to package
+theorems into toplevel conjunctions, and then to later eliminate to the individual
+conjunct as needed in later proofs. This introduction/elimination ought to be simplified
+in the final proof graph.
+
+Even if we were meticulous to never introduce toplevel conjunctions in
+HOL\nbsp{}Light, it is still common to see these sorts of spurious proof
+graph. Automated tools in LCF style kernels typically use inference as part of proof
+search, and circular or otherwise needless routes can be taken in these searches
+(say, by the simplifier), during which a theorem might gather needless
+dependencies. If, say, one were to first simplify an arithmetic expression early on
+in a proof, they might find themselves gathering dependencies on a whole bunch of
+arithmetic identities, even if the applied rewrites were not strictly necessary.
+
+To allow the proof graphs to be simplified, we have the wrapped kernel track theorems
+which duplicate explicitly tracked theorems. Thus, in the figure above, the node $X$
+in red will be tracked as a duplicate of the node $X$ in green. When the user
+requests that $Z$ be tracked, we post-process its dependency graph, and short-circuit
+the link, leaving a direct link from $Z$ to the tracked $X$ in green:
+
+#+BEGIN_LaTeX
+  \begin{tikzpicture}
+    \matrix (m) [matrix of nodes, row sep=1em, column sep=1em]{
+        \colorbox{green}{$P_1$} &   & \colorbox{green}{$P_2$} & \\
+            & \colorbox{green}{X} & \\
+            & \colorbox{green}{Z} & \\};
+     \draw[->]
+        (m-1-1) -> (m-2-2);
+     \draw[->]
+        (m-1-3) -> (m-2-2);
+     \draw[->]
+        (m-2-2) -> (m-3-2);
+  \end{tikzpicture}
+#+END_LaTeX
+
+** Definitions and Constants
+
+The proof graph in HOL Light has many roots, corresponding to three kinds of theorem:
+
+1. logical truths involving only the primitive notions of equality and lambda
+   abstraction; 
+2. axioms such as the axiom of choice;
+3. definitions of constants and types.
+
+We would like to distinguish the three roots, and there is a simple reason to do so
+in terms of the main applications of these data sets. We should not train lemma
+recommender systems on unprovable definitions and axioms, and we should not ask lemma
+recommender systems to supply us with (first-order) logical truths that an ATP will
+just end up reducing to $\top$ and filtering out.
+
+Axioms and definitions ultimately arise through special kernel rules which introduce
+them. However, the immediate output of these rules tend to be in a very basic form,
+and some additional reasoning tends to take place before the axioms and definitions
+become bound at the toplevel. For instance, the recursive definition facilities of
+HOL\nbsp{}Light will attempt to introduce a selection of recursive equations which
+are ultimately backed by a basic definition in terms of the arbitrary choice of a
+fixpoint.
+
+In order to identify this situation, we wrap the basic definition facility of the
+HOL\nbsp{}Light kernel to add the names of constants introduced. These names are then
+propagated and accumulated through the proof graph. A root node of the graph is then
+identified as a definition of a constant $c$ if it depends on $c$ but its
+ancestors do not.
+
+The relationship this creates between constants and definitions is then many-to-many:
+multiple theorems may simultaneously define multiple constants. Thus, while the
+HOL\nbsp{}Light theorem prover explicitly defines the constants =IND_0= and
+=IND_SUC= by basic definitional theorems:
+
+#+BEGIN_SRC text
+  IND_SUC = (@f. ?z. (!x1 x2. f x1 = f x2 <=> x1 = x2) 
+            /\ (!x. ~(f x = z)))
+  IND_0 = (@z. (!x1 x2. IND_SUC x1 = IND_SUC x2 <=> x1 = x2) /\
+               (!x. ~(IND_SUC x = z)))
+#+END_SRC
+
+Neither of these make it to the top-level. Instead, our proof graph records as definitional
+roots the two specifications:
+
+#+BEGIN_SRC text
+  !x1 x2. IND_SUC x1 = IND_SUC x2 <=> x1 = x2
+  !x. ~(IND_SUC x = IND_0)
+#+END_SRC
+
+** Source code references
+The set of dependencies tracked via the inference rules do not generally match the
+theorems and inference rules referenced in code. The user will appeal to derived
+inference rules, tactics and decision procedures which will internally generate many
+kernel inferences and choose which lemmas to apply. So a linear conjecture in
+arithmetic might be proven with a single rule =ARITH_RULE=, yet bring in over a
+hundred explicit theorem dependencies.
+
+There is a clear mismatch between what a user thinks of as a proof and what is
+recorded as theorem dependencies, and so in addition to kernel tracked dependencies,
+we collect data on all theorem identifiers we see in the source code. More
+specifically, we define a general /theorem type/ to be the type =thm=, together with
+types =a -> b= where =b= is of theorem type. Using our toplevel hooks
+(\S[[id:b756362e-8f90-429b-99af-6b7110f99026]]), 
+we collect data on the identifiers of this type and on any theorem type
+arguments on their right hand sides. So in the code:
+
+#+BEGIN_SRC text
+MESON [ADD_ASSOC; ADD_SYM]
+#+END_SRC
+we record that the proof uses =MESON= as applied to =ADD_ASSOC= and =ADD_SYM=.
+
+* Tactics
+The standard way to build proofs in HOL\nbsp{}Light is to apply \emph{tactics} to
+\emph{goals}. A goal consists of the HOL\nbsp{}Light term that the user wishes to
+prove at a particular point in a proof, together with a set of hypotheses that are in
+force at that point. A tactic is an ordinary Ocaml function which takes such a goal
+and outputs a list of new goals, along with a justification as to how the solutions
+of the new goals can be combined to solve the original goal.
+
+In this way, a user can repeatedly break down a problem, applying tactics until no
+more goals are generated. After this, the justifications can bubble up, combining to
+output the original goal as a theorem. 
+
+Day-to-day, a user will prove theorems by stating a goal and then applying tactics
+one after the other, discharging some subgoals while accumulating a backlog of others
+on a stack. Eventually, the stack will be empty, and the proof will be complete. If
+the user has a mind for tidiness, they will then go back and ``package" the proof
+into a single tactic, one which reflects how tactics were applied to individual
+subgoals, and where common tactic patterns can be factored out for efficiency.
+
+#+BEGIN_SRC text
+g `!P. ~(?x:A. P x) <=> (!x. ~(P x))`;;
+e GEN_TAC (* remove outer quantifier *);;
+e EQ_TAC (* split equivalence into two implications *);;
+e DISCH_TAC (* put the antecedent into the hypotheses *);;
+e GEN_TAC (* remove outer quantifier *);;
+e DISCH_TAC (* assume negation of goal *);;
+e (UNDISCH_TAC `~(?x:A. P x)`) 
+    (* bring back the first hypothesis *);;
+e (REWRITE_TAC []) (* rewrite a double negation *);;
+e (EXISTS_TAC `x:A`) (* pick a witness *);;
+e (POP_ASSUM ACCEPT_TAC) 
+    (* goal matches our remaining hypothesis: DONE *);;
+e DISCH_TAC (* put the antecedent into the hypotheses *);;
+e (DISCH_THEN (CHOOSE_THEN MP_TAC)) 
+    (* take the witness from the negation of goal *);;
+e (ASM_REWRITE_TAC []) 
+    (* the hypotheses are contradictory: DONE *);;
+#+END_SRC
+
+#+BEGIN_SRC text
+prove
+ (`!P. ~(?x:A. P x) <=> (!x. ~(P x))`,
+  GEN_TAC THEN EQ_TAC THEN DISCH_TAC THENL
+   [GEN_TAC THEN DISCH_TAC THEN UNDISCH_TAC `~(?x:A. P x)` THEN
+    REWRITE_TAC[] THEN EXISTS_TAC `x:A` THEN POP_ASSUM ACCEPT_TAC;
+    DISCH_THEN(CHOOSE_THEN MP_TAC) THEN ASM_REWRITE_TAC[]]);;
+#+END_SRC
+
+Notice that the packaged proof contains one tactic fewer than the linear proof: the
+first use of =DISCH_TAC= is automatically applied to the two subgoals generated by
+=EQ_TAC=. One advantage of the packaged proof is that it encourages the user to
+factor in just this way.
+
+** Recording Tactics
+
+Our aim is to record tactic-based proofs in a way that makes it clear which tactic is
+applied to which goal. Ultimately, this means that the proof recorded most resembles
+the packaged proof, only with all tactic factorings now fully expanded. This gives a
+definitive, tree-based representation of the final proof.
+
+*** Implementation
+
+Tactics are proof strategies which work backwards from a goal as they build up a
+justification function. They are inherently continuation-like. Indeed, the
+justification function roughly has the type =thm list -> thm=. And likewise, when we
+come to modify the basic tactic architecture to support recording tactic trees, we do
+so by using a continuation type for these trees:
+
+#+BEGIN_SRC text
+  type 'a rose_tree = Rose of 'a * 'a rose tree list
+  type 'a rose_tree_cont = 
+    'a rose_tree list -> 'a rose_tree * 'a rose_tree list
+#+END_SRC
+
+These functions could be said to represent a rose-tree ``context" or
+/difference-tree/, being a tree with holes for subtrees. When the difference trees
+are applied, some of the subtrees are filled and any left-overs are returned. 
+
+So consider the following difference rose-tree:
+
+#+BEGIN_LaTeX
+  \begin{center}
+    \begin{tikzpicture}
+      \matrix (m) [matrix of math nodes, row sep=1em, column sep=1em]{
+        & t_1  &   &   \\
+        \Box &    & t_2 &   \\
+        & \Box &   & t_3 \\};
+      \draw[-]
+      (m-1-2) -> (m-2-1);
+      \draw[-]
+      (m-1-2) -> (m-2-3);
+      \draw[-]
+      (m-2-3) -> (m-3-2);
+      \draw[-]
+      (m-2-3) -> (m-3-4);
+    \end{tikzpicture}
+  \end{center}
+#+END_LaTeX
+
+The tree in this case may well correspond to a particular /goal state/ in a tactic
+proof. It shows that we first applied the tactic $t_1$ to the original goal, to
+generate two subgoals. We then applied tactic $t_2$ to the second goal, which generated
+two more subgoals and we finished the last of these subgoals using $t_3$. This leaves
+just two subgoals remaining, shown by the empty boxes. Call these subgoals $g_1$ and
+$g_2$. If this is an interactive proof, being carried out step by step, these two
+subgoals would sit on the goalstack.
+
+Now suppose we apply tactic $t_4$ to $g_1$, which generates another subgoal, and
+tactic $t_5$ to $g_2$, which generates three more subgoals. This gives us two
+difference subtrees:
+
+#+BEGIN_LaTeX
+  \begin{center}
+    \begin{tikzpicture}
+      \matrix (m) [matrix of math nodes, row sep=1em, column sep=1em]{
+      t_4  \\
+      \Box \\};
+      \draw[-]
+      (m-1-1) -> (m-2-1);
+    \end{tikzpicture}
+    \begin{tikzpicture}
+      \matrix (m) [matrix of math nodes, row sep=1em, column sep=1em]{
+        & t_5  &\\
+   \Box & \Box & \Box \\};
+      \draw[-]
+      (m-1-1) -> (m-2-1)
+      (m-1-1) -> (m-2-2)
+      (m-1-1) -> (m-2-3);
+    \end{tikzpicture}
+  \end{center}
+#+END_LaTeX
+which we can insert into the original tree:
+#+BEGIN_LaTeX
+  \begin{center}
+    \begin{tikzpicture}
+      \matrix (m) [matrix of math nodes, row sep=1em, column sep=1em]{
+        & t_1  &      &     \\
+    t_4 &      & t_2  &     \\
+   \Box & t_5  &      & t_3 \\
+   \Box & \Box & \Box &     \\};
+      \draw[-]
+      (m-1-2) -> (m-2-1);
+      \draw[-]
+      (m-1-2) -> (m-2-3);
+      \draw[-]
+      (m-2-3) -> (m-3-2);
+      \draw[-]
+      (m-2-3) -> (m-3-4);
+      \draw[-]
+      (m-2-1) -> (m-3-1);
+      \draw[-]
+      (m-2-3) -> (m-3-2);
+      \draw[-]
+      (m-2-3) -> (m-3-4);
+      \draw[-]
+      (m-3-2) -> (m-4-1);
+      \draw[-]
+      (m-3-2) -> (m-4-2);
+      \draw[-]
+      (m-3-2) -> (m-4-3);
+    \end{tikzpicture}
+  \end{center}
+#+END_LaTeX
+
+This is the principal means of composing tactic-proof records, and it takes very
+little to adapt the tactic system to support it. We change the basic tactic type, so
+that when one is applied to a goal, it generates, in addition to a list of new goal
+terms and a justification, a tactic difference tree. We then adapt primitive tactics
+and combinators to supply and correctly compose the difference trees.
+
+There is little else, since one of the main selling points of the tactic system is
+that, every tactic being an ordinary Ocaml expression glued together with
+combinators, new ones are defined in terms of old, all without touching the
+underlying machinery. This means that any derived tactics will automatically do the
+appropriate recording. 
+
+As for our tree labels, we choose the source code identifier of the corresponding tactic,
+together with any theorems which are used as input to the tactic. We define the
+following tactic transformer to add these labels:
+
+#+BEGIN_SRC ocaml
+  BOX_TAC : identifier -> thm list -> tactic -> tactic
+#+END_SRC
+
+The philosophy of our instrumentation is that the user should not have to call such
+functions explicitly. The instrumentation happens automatically in toplevel hooks.
+
+To return to our example, both the proofs generate the following tactic tree:
+
+TODO
+
+* Modules and Replay
+  :PROPERTIES:
+  :ID:       5545d4dd-4826-489e-bfbe-ca2e4da99249
+  :END:
+
+In \S[[id:c527af20-4415-4428-bdb0-bb20de3117b2]], we discussed a common pathology in
+proof graphs that we simplified with postprocessing. Unfortunately, the solution is
+incomplete. It is not uncommon in HOL\nbsp{}Light to prove top-level conjunctions, causing
+all of their individual dependencies to be merged. If we split the conjunction into
+its components, we find that each component has the set of dependencies of the entire
+conjunction, and any finer detail is lost.
+
+HOListic therefore plays all proofs /twice/. The first run is used to establish what
+individual conjuncts are proven. These conjuncts are then registered to be
+automatically identified via =auto_identify=
+(\S[[id:2bd45850-606a-43a3-8cfd-4a58dbaddc5e]]), and the proof is rerun. A postprocessing
+step can then be used to find a more tightly constrained set of dependencies for each
+conjunct.
+
+So we add another hook into the Ocaml toplevel: =set_str_tranformer=. This takes a
+function to perform an arbitrary AST transformation on every top-level phrase. The
+particular transformation we use descends through modules, boxing all tactics,
+arranging all proofs to be run twice, and adding appropriate =auto_identify= hooks to
+collect data.
+
+Before we describe how we facilitate this, we mention a drawback to our approach to
+data collection via toplevel hooks. In very large developments such as Flyspeck,
+Ocaml modules are frequently leveraged for namespacing, and values inside these
+modules are not bound to toplevel identifiers. As such, they will not cause the
+=phrase_ident= hook from \S[[id:b756362e-8f90-429b-99af-6b7110f99026]] to fire.
+
+This is not a problem for the majority of theories distributed with
+HOL\nbsp{}Light, but it is something we have had to deal with to gather data on the Kepler
+Theorem, a verification which makes liberal use of modules.
+
+* Reproducibility
+
+HOListic will only run with our customised Ocaml compiler, which needs to be pinned
+to a specific version: AST transformations, for instance, can be expected to break
+with later releases of the Ocaml compiler, since these compiler data structures are
+not typically expected to be relied on by user code. The code is therefore being
+released as a package for /Nix/,  a package manager designed for reliable,
+reproducible, sandboxed builds, where we can pin compiler and library versions that
+are guaranteed to work together.
+
+* The Metadata
+
+* Conclusion and Further Work
