@@ -334,7 +334,8 @@ let mk_tracked_thm_of_splitter split get_src_tactics store_id thm =
 let mk_tracked_thm_of_get_src_tactics =
   let split thm =
     match get_trivial_duplicates thm with
-    | [] -> let thm_id,thm = with_tracking thm in
+    | [] -> let thm = modify_meta (fun (_,tacs) -> true,tacs) thm in
+            let thm_id,thm = with_tracking thm in
             thm,[thm_id,thm,true]
     | [_,thm] -> thm,[]
     | _ -> failwith "Theorem has two duplicates in its dependency graph." in
