@@ -26,8 +26,9 @@ stdenv.mkDerivation rec {
   src = fetchFromGitHub {
     owner = "Chattered";
     repo = "ocaml";
-    rev = "transformer";
-    sha256 = "0lk96r75iiibxqc4sm152jhinrsvr3jq5726wl6548hwrb3nx59g";
+    # transformer (11.4.17)
+    rev = "ae505d6b1d273e66935f1fe705a73266e4318c4d";
+    sha256 = "179j7qqcb086x58j2bqjyl8b4vyv26hf23nq7pp288yn0fb7m4r3";
   };
 
   prefixKey = "-prefix ";
