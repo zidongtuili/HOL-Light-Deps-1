@@ -47,19 +47,6 @@ let is_thm_ty =
 let is_thm_vd d =
   is_thm_ty d.Types.val_type;;
 
-(* TODO: Exceptions here will be thrown in the other hook. These
-   should only indicate bugs in the dependency tracking, but still,
-   better error rep orting would be nice. *)
-let exns = ref []
-let env_diff_default s t =
-  {
-    Toploop.env_diff_default s t with
-    Toploop.env_diff_parse_exc = (fun exn _ -> exns := exn :: !exns;
-                                               Printf.printf "Exception!"; t);
-    Toploop.env_diff_ident_exc = (fun exn _ -> exns := exn :: !exns;
-                                               Printf.printf "Exception!"; s)
-  };;
-
 module Batstringmap =
   Batmap.Make_ext(struct type t = string let compare = compare end)
 module Batintmap = Batmap.Make_ext(struct type t = int let compare = compare end)
