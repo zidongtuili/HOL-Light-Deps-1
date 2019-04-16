@@ -8,7 +8,7 @@
 
 (*** Standard HOL Light library ***)
 
-loadt "MY/library/poly/analysis.ml";;
+loadt "analysis.ml";;
 loads "Library/transc.ml";;
 loads "Examples/polylog.ml";;
 
