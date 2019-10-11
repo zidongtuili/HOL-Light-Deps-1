@@ -9,8 +9,8 @@
 (*** Standard HOL Light library ***)
 
 loadt "analysis.ml";;
-loads "Library/transc.ml";;
-loads "Examples/polylog.ml";;
+loadt "transc.ml";;
+loadt "polylog.ml";;
 
 (*** New stuff ***)
 
